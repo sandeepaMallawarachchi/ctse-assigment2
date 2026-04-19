@@ -1,13 +1,13 @@
 """Shared state definitions passed between agents.
 
 The final workflow will enrich this structure as each specialized agent
-adds its own outputs. This starter version focuses on fields needed by
-the Patch Generation Agent.
+adds its own outputs. This version keeps the state strongly structured
+around the Patch Generation Agent contract.
 """
 
-from typing import Any
-
 from pydantic import BaseModel, Field
+
+from agents.patch_agent.schema import PatchArtifact
 
 
 class IssueContext(BaseModel):
@@ -28,6 +28,14 @@ class RepositoryFinding(BaseModel):
     file_path: str = Field(..., description="Candidate file related to the issue.")
     snippet: str = Field(..., description="Relevant code snippet from the repository.")
     reason: str = Field(..., description="Why this file/snippet is relevant.")
+    line_start: int | None = Field(
+        default=None,
+        description="Optional starting line number for the snippet.",
+    )
+    line_end: int | None = Field(
+        default=None,
+        description="Optional ending line number for the snippet.",
+    )
 
 
 class PatchWorkflowState(BaseModel):
@@ -35,7 +43,7 @@ class PatchWorkflowState(BaseModel):
 
     issue: IssueContext
     repository_findings: list[RepositoryFinding] = Field(default_factory=list)
-    patch_agent_output: dict[str, Any] | None = Field(
+    patch_agent_output: PatchArtifact | None = Field(
         default=None,
-        description="Serialized patch proposal prepared for validation.",
+        description="Structured patch proposal prepared for validation.",
     )

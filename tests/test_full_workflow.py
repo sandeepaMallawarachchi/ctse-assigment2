@@ -1,7 +1,17 @@
-"""Starter integration-style test placeholders for the shared workflow."""
+"""Starter integration-style tests for shared workflow state."""
+
+from orchestrator.state import IssueContext, PatchWorkflowState
 
 
-def test_workflow_placeholder() -> None:
-    """Keep a visible test target for the future end-to-end flow."""
+def test_patch_workflow_state_starts_without_patch_output() -> None:
+    """Shared workflow state should allow the patch stage to populate later."""
 
-    assert True
+    state = PatchWorkflowState(
+        issue=IssueContext(
+            issue_id="ISSUE-003",
+            title="Example issue",
+            description="Example description",
+        )
+    )
+
+    assert state.patch_agent_output is None
