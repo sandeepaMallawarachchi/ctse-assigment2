@@ -4,6 +4,15 @@ This agent will consume structured issue context and repository findings,
 then prepare a minimal patch proposal for downstream validation.
 """
 
+from __future__ import annotations
+
+import logging
+from typing import Optional, Protocol
+
+from agents.patch_agent.prompt import (
+    PATCH_AGENT_SYSTEM_PROMPT,
+    build_patch_agent_user_prompt,
+)
 from agents.patch_agent.schema import PatchChangePlan, PatchProposal
 from agents.patch_agent.utils import (
     build_validation_focus,
@@ -14,14 +23,63 @@ from agents.patch_agent.utils import (
 from orchestrator.state import PatchWorkflowState
 from tools.patch_tools.patch_writer import write_patch_artifact
 
+logger = logging.getLogger(__name__)
+
+
+class PatchProposalGenerator(Protocol):
+    """Protocol for model-backed patch proposal generation."""
+
+    def generate(self, state: PatchWorkflowState) -> PatchProposal:
+        """Build a structured patch proposal from shared workflow state."""
+
+
+class OllamaPatchProposalGenerator:
+    """Generate structured patch proposals with Ollama via LangChain."""
+
+    def __init__(self, model_name: str, base_url: str) -> None:
+        """Store connection details for deferred Ollama initialization."""
+
+        self.model_name = model_name
+        self.base_url = base_url
+
+    def generate(self, state: PatchWorkflowState) -> PatchProposal:
+        """Call the local Ollama model and coerce output into PatchProposal."""
+
+        try:
+            from langchain_ollama import ChatOllama
+        except ImportError as exc:
+            raise RuntimeError(
+                "langchain-ollama is not installed. Install requirements first."
+            ) from exc
+
+        llm = ChatOllama(
+            model=self.model_name,
+            base_url=self.base_url,
+            temperature=0,
+        ).with_structured_output(PatchProposal)
+
+        return llm.invoke(
+            [
+                ("system", PATCH_AGENT_SYSTEM_PROMPT),
+                ("human", build_patch_agent_user_prompt(state)),
+            ]
+        )
+
 
 class PatchGenerationAgent:
     """Specialized agent responsible for proposing minimal code patches."""
 
-    def __init__(self, output_dir: str = "outputs/patches") -> None:
-        """Initialize the agent with a configurable artifact directory."""
+    def __init__(
+        self,
+        output_dir: str = "outputs/patches",
+        proposal_generator: Optional[PatchProposalGenerator] = None,
+        allow_fallback: bool = True,
+    ) -> None:
+        """Initialize the agent with configurable generation behavior."""
 
         self.output_dir = output_dir
+        self.proposal_generator = proposal_generator
+        self.allow_fallback = allow_fallback
 
     def run(self, state: PatchWorkflowState) -> PatchWorkflowState:
         """Build a minimal structured patch proposal from shared state.
@@ -33,6 +91,33 @@ class PatchGenerationAgent:
         Returns:
             Updated workflow state with a serialized patch proposal artifact.
         """
+
+        proposal = self._generate_proposal(state)
+        state.patch_agent_output = write_patch_artifact(
+            proposal=proposal,
+            output_dir=self.output_dir,
+        )
+        return state
+
+    def _generate_proposal(self, state: PatchWorkflowState) -> PatchProposal:
+        """Use the configured generator and fall back when appropriate."""
+
+        if self.proposal_generator is None:
+            return self._build_fallback_proposal(state)
+
+        try:
+            return self.proposal_generator.generate(state)
+        except Exception as exc:
+            if not self.allow_fallback:
+                raise
+            logger.warning(
+                "Patch proposal generator failed; using deterministic fallback: %s",
+                exc,
+            )
+            return self._build_fallback_proposal(state)
+
+    def _build_fallback_proposal(self, state: PatchWorkflowState) -> PatchProposal:
+        """Create a deterministic patch proposal when no model is available."""
 
         target_files = collect_candidate_files(state.repository_findings)
         risk_level = estimate_risk_level(target_files)
@@ -55,7 +140,7 @@ class PatchGenerationAgent:
                 f"Primary evidence: {state.repository_findings[0].reason}."
             )
 
-        proposal = PatchProposal(
+        return PatchProposal(
             issue_id=state.issue.issue_id,
             summary=f"Target a minimal fix for '{state.issue.title}'.",
             target_files=target_files,
@@ -68,8 +153,3 @@ class PatchGenerationAgent:
             ],
             validation_focus=build_validation_focus(state.repository_findings),
         )
-        state.patch_agent_output = write_patch_artifact(
-            proposal=proposal,
-            output_dir=self.output_dir,
-        )
-        return state
