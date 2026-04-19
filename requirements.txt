@@ -1,0 +1,11 @@
+# Core orchestration and modeling
+langgraph
+langchain
+langchain-ollama
+pydantic
+
+# Observability and configuration
+python-dotenv
+
+# Testing
+pytest

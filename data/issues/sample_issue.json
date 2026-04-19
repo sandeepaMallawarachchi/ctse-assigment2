@@ -1,0 +1,6 @@
+{
+  "issue_id": "ISSUE-001",
+  "title": "Fix login button spinner not stopping",
+  "description": "The login button remains in a loading state after a failed authentication attempt.",
+  "expected_behavior": "The spinner should stop and the user should see an error message."
+}
