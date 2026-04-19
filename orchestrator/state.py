@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 """Shared state definitions passed between agents.
 
 The final workflow will enrich this structure as each specialized agent
 adds its own outputs. This version keeps the state strongly structured
 around the Patch Generation Agent contract.
 """
+
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -16,7 +20,7 @@ class IssueContext(BaseModel):
     issue_id: str = Field(..., description="Unique identifier for the issue.")
     title: str = Field(..., description="Short issue title.")
     description: str = Field(..., description="Expanded issue or bug report.")
-    expected_behavior: str | None = Field(
+    expected_behavior: Optional[str] = Field(
         default=None,
         description="Optional expected behavior extracted during triage.",
     )
@@ -28,11 +32,11 @@ class RepositoryFinding(BaseModel):
     file_path: str = Field(..., description="Candidate file related to the issue.")
     snippet: str = Field(..., description="Relevant code snippet from the repository.")
     reason: str = Field(..., description="Why this file/snippet is relevant.")
-    line_start: int | None = Field(
+    line_start: Optional[int] = Field(
         default=None,
         description="Optional starting line number for the snippet.",
     )
-    line_end: int | None = Field(
+    line_end: Optional[int] = Field(
         default=None,
         description="Optional ending line number for the snippet.",
     )
@@ -43,7 +47,7 @@ class PatchWorkflowState(BaseModel):
 
     issue: IssueContext
     repository_findings: list[RepositoryFinding] = Field(default_factory=list)
-    patch_agent_output: PatchArtifact | None = Field(
+    patch_agent_output: Optional[PatchArtifact] = Field(
         default=None,
         description="Structured patch proposal prepared for validation.",
     )
