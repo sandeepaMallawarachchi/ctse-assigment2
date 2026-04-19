@@ -18,6 +18,10 @@ from agents.patch_agent.agent import (
     OllamaPatchProposalGenerator,
     PatchGenerationAgent,
 )
+from agents.validation_agent.agent import (
+    OllamaValidationVerdictGenerator,
+    ValidationAgent,
+)
 from app.config import AppConfig
 from orchestrator.state import IssueContext, PatchWorkflowState, RepositoryFinding
 
@@ -66,6 +70,23 @@ def build_patch_agent(config: AppConfig) -> PatchGenerationAgent:
     )
 
 
+def build_validation_agent(config: AppConfig) -> ValidationAgent:
+    """Create the validation agent with Ollama support and safe fallback."""
+
+    verdict_generator = None
+    if config.use_ollama_for_validation_agent:
+        verdict_generator = OllamaValidationVerdictGenerator(
+            model_name=config.validation_agent_model,
+            base_url=config.ollama_base_url,
+        )
+
+    return ValidationAgent(
+        output_dir=config.validation_output_dir,
+        verdict_generator=verdict_generator,
+        allow_fallback=config.allow_validation_fallback,
+    )
+
+
 def main() -> None:
     """Run the patch-agent demo from the project root."""
 
@@ -82,6 +103,21 @@ def main() -> None:
     print(f"Target files: {', '.join(artifact.proposal.target_files)}")
     print(f"Risk level: {artifact.proposal.risk_level}")
     print(f"Artifact path: {artifact.artifact_path}")
+
+    # --- Validation & Report Agent ---
+    validation_agent = build_validation_agent(config)
+    updated_state = validation_agent.run(updated_state)
+
+    report = updated_state.validation_output.report
+    verdict = report.verdict
+
+    print("\nValidation & Report Agent completed")
+    print(f"Verdict     : {verdict.status} (confidence: {verdict.confidence})")
+    print(f"Checks      : {verdict.checks_passed} passed, "
+          f"{verdict.checks_failed} failed, {verdict.checks_warned} warned")
+    print(f"Assessment  : {report.llm_assessment}")
+    print(f"Recommend   : {report.recommendation}")
+    print(f"Report path : {updated_state.validation_output.artifact_path}")
 
 
 if __name__ == "__main__":

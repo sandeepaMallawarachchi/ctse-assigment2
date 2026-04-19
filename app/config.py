@@ -21,3 +21,11 @@ class AppConfig:
     allow_patch_fallback: bool = (
         os.getenv("ALLOW_PATCH_FALLBACK", "true").strip().lower() == "true"
     )
+    validation_agent_model: str = os.getenv("VALIDATION_AGENT_MODEL", "llama3.1")
+    use_ollama_for_validation_agent: bool = (
+        os.getenv("USE_OLLAMA_FOR_VALIDATION_AGENT", "true").strip().lower() == "true"
+    )
+    validation_output_dir: str = os.getenv("VALIDATION_OUTPUT_DIR", "outputs/reports")
+    allow_validation_fallback: bool = (
+        os.getenv("ALLOW_VALIDATION_FALLBACK", "true").strip().lower() == "true"
+    )
