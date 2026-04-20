@@ -85,17 +85,46 @@ def _score_file_content(content: str, search_terms: list[str]) -> int:
     return sum(lowered.count(term.lower()) for term in search_terms)
 
 
-def _extract_best_snippet(content: str, search_terms: list[str]) -> tuple[str, Optional[int], Optional[int]]:
-    """Extract a small snippet centered on the first matching line."""
+def _line_match_score(line: str, search_terms: list[str]) -> int:
+    """Score a single line by keyword matches and code-like signals."""
+
+    lowered = line.lower()
+    score = sum(lowered.count(term.lower()) for term in search_terms)
+    stripped = line.strip()
+    if not stripped:
+        return 0
+
+    if stripped.startswith(("def ", "if ", "return ", "class ", "for ", "while ")):
+        score += 2
+    if "=" in stripped and not stripped.startswith("#"):
+        score += 1
+    if stripped.startswith(("\"\"\"", "#")):
+        score -= 2
+    return score
+
+
+def _extract_best_snippet(
+    content: str,
+    search_terms: list[str],
+) -> tuple[str, Optional[int], Optional[int]]:
+    """Extract a small snippet centered on the strongest matching code line."""
 
     lines = content.splitlines()
+    best_index: Optional[int] = None
+    best_score = 0
+
     for index, line in enumerate(lines):
-        lowered = line.lower()
-        if any(term in lowered for term in search_terms):
-            start = max(0, index - 1)
-            end = min(len(lines), index + 2)
-            snippet = "\n".join(lines[start:end]).strip()
-            return snippet, start + 1, end
+        score = _line_match_score(line, search_terms)
+        if score > best_score:
+            best_score = score
+            best_index = index
+
+    if best_index is not None and best_score > 0:
+        start = max(0, best_index - 1)
+        end = min(len(lines), best_index + 2)
+        snippet = "\n".join(lines[start:end]).strip()
+        return snippet, start + 1, end
+
     snippet = "\n".join(lines[:3]).strip()
     return snippet, 1 if lines else None, min(len(lines), 3) if lines else None
 
