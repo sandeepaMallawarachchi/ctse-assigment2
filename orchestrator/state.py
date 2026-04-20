@@ -11,6 +11,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from agents.analysis_agent.schema import AnalysisArtifact
 from agents.patch_agent.schema import PatchArtifact
 
 
@@ -46,7 +47,15 @@ class PatchWorkflowState(BaseModel):
     """Shared state container used by the orchestrator and agents."""
 
     issue: IssueContext
+    repository_root: str = Field(
+        default="data/repo_mock",
+        description="Local repository path that analysis tools should inspect.",
+    )
     repository_findings: list[RepositoryFinding] = Field(default_factory=list)
+    analysis_output: Optional[AnalysisArtifact] = Field(
+        default=None,
+        description="Structured analysis result produced by the Codebase Analysis Agent.",
+    )
     patch_agent_output: Optional[PatchArtifact] = Field(
         default=None,
         description="Structured patch proposal prepared for validation.",
