@@ -33,10 +33,17 @@ def test_search_repository_returns_mock_repo_findings() -> None:
 
     assert results
     assert any(result.finding.file_path == "src/auth/login_handler.py" for result in results)
+    assert any(result.finding.file_path == "src/ui/login_form.py" for result in results)
+
     auth_result = next(
         result for result in results if result.finding.file_path == "src/auth/login_handler.py"
     )
-    assert "if login_failed:" in auth_result.finding.snippet or "return spinner" in auth_result.finding.snippet
+    ui_result = next(
+        result for result in results if result.finding.file_path == "src/ui/login_form.py"
+    )
+
+    assert "if login_failed:" in auth_result.finding.snippet
+    assert "submit_button = {" in ui_result.finding.snippet
 
 
 def test_codebase_analysis_agent_writes_analysis_artifact(tmp_path: Path) -> None:

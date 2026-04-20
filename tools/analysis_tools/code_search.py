@@ -89,14 +89,24 @@ def _line_match_score(line: str, search_terms: list[str]) -> int:
     """Score a single line by keyword matches and code-like signals."""
 
     lowered = line.lower()
-    score = sum(lowered.count(term.lower()) for term in search_terms)
+    keyword_hits = sum(lowered.count(term.lower()) for term in search_terms)
+    score = keyword_hits * 2
     stripped = line.strip()
     if not stripped:
         return 0
 
-    if stripped.startswith(("def ", "if ", "return ", "class ", "for ", "while ")):
+    if stripped.startswith(("if ", "elif ")):
+        score += 6
+    elif stripped.startswith(("return ", "raise ")):
+        score += 5
+    elif "=" in stripped and not stripped.startswith("#"):
+        score += 5
+    elif stripped.startswith(("for ", "while ")):
         score += 2
-    if "=" in stripped and not stripped.startswith("#"):
+    elif stripped.startswith(("def ", "class ")):
+        score += 0
+
+    if keyword_hits >= 2:
         score += 1
     if stripped.startswith(("\"\"\"", "#")):
         score -= 2
