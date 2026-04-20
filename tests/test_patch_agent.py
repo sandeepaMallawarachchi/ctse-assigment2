@@ -11,6 +11,7 @@ from agents.patch_agent.prompt import build_patch_agent_user_prompt
 from agents.patch_agent.schema import PatchChangePlan, PatchProposal
 from agents.patch_agent.utils import collect_candidate_files
 from orchestrator.state import IssueContext, PatchWorkflowState, RepositoryFinding
+from tools.patch_tools.patch_writer import build_patch_draft
 
 
 class FakeProposalGenerator:
@@ -69,6 +70,8 @@ def test_collect_candidate_files_returns_unique_paths() -> None:
     ]
 
     assert collect_candidate_files(findings) == ["app/auth.py", "app/ui.py"]
+
+
 def test_patch_generation_agent_writes_structured_artifact(tmp_path: Path) -> None:
     """The agent should produce a typed artifact for downstream validation."""
 
@@ -105,11 +108,41 @@ def test_patch_generation_agent_writes_structured_artifact(tmp_path: Path) -> No
         "app/ui.py",
     ]
     artifact_path = Path(updated_state.patch_agent_output.artifact_path)
+    draft_path = Path(updated_state.patch_agent_output.patch_draft_path)
     assert artifact_path.exists()
+    assert draft_path.exists()
+    assert "diff --git a/app/retry.py b/app/retry.py" in updated_state.patch_agent_output.patch_draft
 
     artifact_content = json.loads(artifact_path.read_text(encoding="utf-8"))
     assert artifact_content["issue_id"] == "ISSUE-002"
     assert artifact_content["risk_level"] == "medium"
+
+
+def test_build_patch_draft_renders_unified_diff_sections() -> None:
+    """The custom patch tool should create a readable diff-style draft."""
+
+    proposal = PatchProposal(
+        issue_id="ISSUE-200",
+        summary="Fix stale loading state after login failure.",
+        target_files=["app/auth.py"],
+        change_plan=[
+            PatchChangePlan(
+                file_path="app/auth.py",
+                change_summary="Reset loading state in the error branch.",
+                evidence="The failure branch leaves the loading flag enabled.",
+            )
+        ],
+        rationale="The error branch should clear transient UI state.",
+        risk_level="low",
+        risk_notes=["Only one file is targeted."],
+        validation_focus=["Confirm loading state resets on failed login."],
+    )
+
+    draft = build_patch_draft(proposal)
+
+    assert draft.startswith("# Issue: ISSUE-200")
+    assert "diff --git a/app/auth.py b/app/auth.py" in draft
+    assert "+# Patch intent: Reset loading state in the error branch" in draft
 
 
 def test_patch_generation_agent_accepts_model_backed_structured_output(

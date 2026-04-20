@@ -103,10 +103,11 @@ class PatchGenerationAgent:
             output_dir=self.output_dir,
         )
         logger.info(
-            "PatchGenerationAgent completed for issue_id=%s target_files=%s artifact_path=%s risk_level=%s",
+            "PatchGenerationAgent completed for issue_id=%s target_files=%s artifact_path=%s patch_draft_path=%s risk_level=%s",
             proposal.issue_id,
             ",".join(proposal.target_files),
             state.patch_agent_output.artifact_path,
+            state.patch_agent_output.patch_draft_path,
             proposal.risk_level,
         )
         return state

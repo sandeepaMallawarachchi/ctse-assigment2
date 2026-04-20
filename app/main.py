@@ -125,9 +125,10 @@ def main() -> None:
     artifact = updated_state.patch_agent_output
     assert artifact is not None
     logger.info(
-        "Application completed patch-agent demo for issue_id=%s artifact_path=%s",
+        "Application completed patch-agent demo for issue_id=%s artifact_path=%s patch_draft_path=%s",
         artifact.proposal.issue_id,
         artifact.artifact_path,
+        artifact.patch_draft_path,
     )
 
     print("Patch Generation Agent demo completed")
@@ -135,6 +136,7 @@ def main() -> None:
     print(f"Target files: {', '.join(artifact.proposal.target_files)}")
     print(f"Risk level: {artifact.proposal.risk_level}")
     print(f"Artifact path: {artifact.artifact_path}")
+    print(f"Patch draft path: {artifact.patch_draft_path}")
 
 
 if __name__ == "__main__":

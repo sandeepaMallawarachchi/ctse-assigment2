@@ -58,3 +58,11 @@ class PatchArtifact(BaseModel):
         ...,
         description="Filesystem path where the serialized artifact is stored.",
     )
+    patch_draft: str = Field(
+        ...,
+        description="Unified-diff-style draft prepared by the custom patch tool.",
+    )
+    patch_draft_path: str = Field(
+        ...,
+        description="Filesystem path where the draft patch text is stored.",
+    )
