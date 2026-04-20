@@ -92,10 +92,22 @@ class PatchGenerationAgent:
             Updated workflow state with a serialized patch proposal artifact.
         """
 
+        logger.info(
+            "PatchGenerationAgent started for issue_id=%s with %d repository findings",
+            state.issue.issue_id,
+            len(state.repository_findings),
+        )
         proposal = self._generate_proposal(state)
         state.patch_agent_output = write_patch_artifact(
             proposal=proposal,
             output_dir=self.output_dir,
+        )
+        logger.info(
+            "PatchGenerationAgent completed for issue_id=%s target_files=%s artifact_path=%s risk_level=%s",
+            proposal.issue_id,
+            ",".join(proposal.target_files),
+            state.patch_agent_output.artifact_path,
+            proposal.risk_level,
         )
         return state
 
@@ -103,17 +115,34 @@ class PatchGenerationAgent:
         """Use the configured generator and fall back when appropriate."""
 
         if self.proposal_generator is None:
+            logger.info(
+                "PatchGenerationAgent using deterministic proposal generation for issue_id=%s",
+                state.issue.issue_id,
+            )
             return self._build_fallback_proposal(state)
 
         try:
+            logger.info(
+                "PatchGenerationAgent requesting model-backed proposal for issue_id=%s",
+                state.issue.issue_id,
+            )
             proposal = self.proposal_generator.generate(state)
             self._validate_proposal_quality(proposal)
+            logger.info(
+                "PatchGenerationAgent accepted model-backed proposal for issue_id=%s",
+                state.issue.issue_id,
+            )
             return proposal
         except Exception as exc:
             if not self.allow_fallback:
+                logger.exception(
+                    "PatchGenerationAgent failed without fallback for issue_id=%s",
+                    state.issue.issue_id,
+                )
                 raise
             logger.warning(
-                "Patch proposal generator failed; using deterministic fallback: %s",
+                "PatchGenerationAgent falling back for issue_id=%s reason=%s",
+                state.issue.issue_id,
                 exc,
             )
             return self._build_fallback_proposal(state)
@@ -123,6 +152,12 @@ class PatchGenerationAgent:
 
         target_files = collect_candidate_files(state.repository_findings)
         risk_level = estimate_risk_level(target_files)
+        logger.info(
+            "PatchGenerationAgent fallback selected target_files=%s risk_level=%s for issue_id=%s",
+            ",".join(target_files),
+            risk_level,
+            state.issue.issue_id,
+        )
 
         change_plan = [
             PatchChangePlan(
