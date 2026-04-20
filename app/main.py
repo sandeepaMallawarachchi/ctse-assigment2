@@ -6,6 +6,7 @@ orchestrator entry flow. For now it provides a small patch-agent demo.
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 from pathlib import Path
@@ -18,10 +19,6 @@ if str(PROJECT_ROOT) not in sys.path:
 from agents.patch_agent.agent import (
     OllamaPatchProposalGenerator,
     PatchGenerationAgent,
-)
-from agents.validation_agent.agent import (
-    OllamaValidationVerdictGenerator,
-    ValidationAgent,
 )
 from app.config import AppConfig
 from orchestrator.state import IssueContext, PatchWorkflowState, RepositoryFinding
@@ -44,10 +41,30 @@ def configure_logging(config: AppConfig) -> None:
     )
 
 
-def build_demo_state() -> PatchWorkflowState:
-    """Load a sample issue and create mock analysis findings for the demo."""
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for the patch-agent demo."""
 
-    sample_issue_path = Path("data/issues/sample_issue.json")
+    parser = argparse.ArgumentParser(description="Run the Patch Generation Agent demo.")
+    parser.add_argument(
+        "--agent",
+        default="patch",
+        choices=["patch"],
+        help="Agent entrypoint to run. Additional agents will be added later.",
+    )
+    parser.add_argument(
+        "--issue-file",
+        default="data/issues/sample_issue.json",
+        help="Path to a JSON issue payload file.",
+    )
+    return parser.parse_args()
+
+
+def build_demo_state(
+    issue_file: str,
+) -> PatchWorkflowState:
+    """Load a sample issue and create mock analysis findings for the patch demo."""
+
+    sample_issue_path = Path(issue_file)
     issue_payload = json.loads(sample_issue_path.read_text(encoding="utf-8"))
 
     return PatchWorkflowState(
@@ -88,31 +105,20 @@ def build_patch_agent(config: AppConfig) -> PatchGenerationAgent:
     )
 
 
-def build_validation_agent(config: AppConfig) -> ValidationAgent:
-    """Create the validation agent with Ollama support and safe fallback."""
-
-    verdict_generator = None
-    if config.use_ollama_for_validation_agent:
-        verdict_generator = OllamaValidationVerdictGenerator(
-            model_name=config.validation_agent_model,
-            base_url=config.ollama_base_url,
-        )
-
-    return ValidationAgent(
-        output_dir=config.validation_output_dir,
-        verdict_generator=verdict_generator,
-        allow_fallback=config.allow_validation_fallback,
-    )
-
-
 def main() -> None:
     """Run the patch-agent demo from the project root."""
 
+    args = parse_args()
     config = AppConfig()
     configure_logging(config)
     logger = logging.getLogger(__name__)
-    logger.info("Application startup for Patch Generation Agent demo")
-    state = build_demo_state()
+    logger.info(
+        "Application startup for Patch Generation Agent demo agent=%s",
+        args.agent,
+    )
+    state = build_demo_state(
+        issue_file=args.issue_file,
+    )
     agent = build_patch_agent(config)
     updated_state = agent.run(state)
 
@@ -129,21 +135,6 @@ def main() -> None:
     print(f"Target files: {', '.join(artifact.proposal.target_files)}")
     print(f"Risk level: {artifact.proposal.risk_level}")
     print(f"Artifact path: {artifact.artifact_path}")
-
-    # --- Validation & Report Agent ---
-    validation_agent = build_validation_agent(config)
-    updated_state = validation_agent.run(updated_state)
-
-    report = updated_state.validation_output.report
-    verdict = report.verdict
-
-    print("\nValidation & Report Agent completed")
-    print(f"Verdict     : {verdict.status} (confidence: {verdict.confidence})")
-    print(f"Checks      : {verdict.checks_passed} passed, "
-          f"{verdict.checks_failed} failed, {verdict.checks_warned} warned")
-    print(f"Assessment  : {report.llm_assessment}")
-    print(f"Recommend   : {report.recommendation}")
-    print(f"Report path : {updated_state.validation_output.artifact_path}")
 
 
 if __name__ == "__main__":
