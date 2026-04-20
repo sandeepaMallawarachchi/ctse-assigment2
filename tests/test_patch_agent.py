@@ -69,8 +69,6 @@ def test_collect_candidate_files_returns_unique_paths() -> None:
     ]
 
     assert collect_candidate_files(findings) == ["app/auth.py", "app/ui.py"]
-
-
 def test_patch_generation_agent_writes_structured_artifact(tmp_path: Path) -> None:
     """The agent should produce a typed artifact for downstream validation."""
 

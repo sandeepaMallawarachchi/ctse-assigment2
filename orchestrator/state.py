@@ -3,8 +3,8 @@ from __future__ import annotations
 """Shared state definitions passed between agents.
 
 The final workflow will enrich this structure as each specialized agent
-adds its own outputs. Each agent appends its typed artifact to the state
-so all downstream agents have full context without losing prior results.
+adds its own outputs. This version keeps the state strongly structured
+around the Patch Generation Agent contract.
 """
 
 from typing import Optional
@@ -12,7 +12,6 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from agents.patch_agent.schema import PatchArtifact
-from agents.validation_agent.schema import ValidationArtifact
 
 
 class IssueContext(BaseModel):
@@ -51,8 +50,4 @@ class PatchWorkflowState(BaseModel):
     patch_agent_output: Optional[PatchArtifact] = Field(
         default=None,
         description="Structured patch proposal prepared for validation.",
-    )
-    validation_output: Optional[ValidationArtifact] = Field(
-        default=None,
-        description="Validation result and final report from the Validation Agent.",
     )

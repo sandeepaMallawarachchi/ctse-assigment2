@@ -16,8 +16,8 @@ from agents.patch_agent.prompt import (
 from agents.patch_agent.schema import PatchChangePlan, PatchProposal
 from agents.patch_agent.utils import (
     build_validation_focus,
-    collect_candidate_files,
     estimate_risk_level,
+    collect_candidate_files,
     summarize_change_scope,
 )
 from orchestrator.state import PatchWorkflowState
@@ -174,7 +174,7 @@ class PatchGenerationAgent:
         ]
         if state.repository_findings:
             rationale_parts.append(
-                f"Primary evidence: {state.repository_findings[0].reason}."
+                f"Primary evidence: {state.repository_findings[0].reason.rstrip('.')}."
             )
 
         return PatchProposal(
