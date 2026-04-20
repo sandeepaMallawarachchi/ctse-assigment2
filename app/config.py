@@ -21,3 +21,5 @@ class AppConfig:
     allow_patch_fallback: bool = (
         os.getenv("ALLOW_PATCH_FALLBACK", "true").strip().lower() == "true"
     )
+    execution_log_path: str = os.getenv("EXECUTION_LOG_PATH", "logs/execution.log")
+    log_level: str = os.getenv("LOG_LEVEL", "INFO")

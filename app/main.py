@@ -7,6 +7,7 @@ orchestrator entry flow. For now it provides a small patch-agent demo.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 import sys
 
@@ -20,6 +21,23 @@ from agents.patch_agent.agent import (
 )
 from app.config import AppConfig
 from orchestrator.state import IssueContext, PatchWorkflowState, RepositoryFinding
+
+
+def configure_logging(config: AppConfig) -> None:
+    """Configure console and file logging for the local demo run."""
+
+    log_path = Path(config.execution_log_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    logging.basicConfig(
+        level=getattr(logging, config.log_level.upper(), logging.INFO),
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        handlers=[
+            logging.FileHandler(log_path, encoding="utf-8"),
+            logging.StreamHandler(),
+        ],
+        force=True,
+    )
 
 
 def build_demo_state() -> PatchWorkflowState:
@@ -70,12 +88,20 @@ def main() -> None:
     """Run the patch-agent demo from the project root."""
 
     config = AppConfig()
+    configure_logging(config)
+    logger = logging.getLogger(__name__)
+    logger.info("Application startup for Patch Generation Agent demo")
     state = build_demo_state()
     agent = build_patch_agent(config)
     updated_state = agent.run(state)
 
     artifact = updated_state.patch_agent_output
     assert artifact is not None
+    logger.info(
+        "Application completed patch-agent demo for issue_id=%s artifact_path=%s",
+        artifact.proposal.issue_id,
+        artifact.artifact_path,
+    )
 
     print("Patch Generation Agent demo completed")
     print(f"Issue ID: {artifact.proposal.issue_id}")
