@@ -9,3 +9,10 @@ Current scope:
 - minimal placeholders for orchestration, app entrypoint, tools, and tests
 
 This repository is intentionally kept minimal for step-by-step development.
+
+Current runnable modes:
+- `python3 app/main.py` then choose `1`, `2`, or `3`
+- `python3 app/main.py --run analysis --repo-root data/repo_mock`
+- `python3 app/main.py --run patch`
+- `python3 app/main.py --run patch --analysis-artifact outputs/reports/ISSUE-001_analysis.json`
+- `python3 app/main.py --run full --repo-root data/repo_mock`
