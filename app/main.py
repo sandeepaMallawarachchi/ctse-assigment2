@@ -16,6 +16,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from agents.analysis_agent.agent import (
+    CodebaseAnalysisAgent,
+    OllamaAnalysisSummaryGenerator,
+)
 from agents.patch_agent.agent import (
     OllamaPatchProposalGenerator,
     PatchGenerationAgent,
@@ -44,23 +48,29 @@ def configure_logging(config: AppConfig) -> None:
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for the patch-agent demo."""
 
-    parser = argparse.ArgumentParser(description="Run the Patch Generation Agent demo.")
+    parser = argparse.ArgumentParser(description="Run a local agent demo.")
     parser.add_argument(
         "--agent",
         default="patch",
-        choices=["patch"],
-        help="Agent entrypoint to run. Additional agents will be added later.",
+        choices=["analysis", "patch"],
+        help="Agent entrypoint to run.",
     )
     parser.add_argument(
         "--issue-file",
         default="data/issues/sample_issue.json",
         help="Path to a JSON issue payload file.",
     )
+    parser.add_argument(
+        "--repo-root",
+        default="data/repo_mock",
+        help="Local repository path for analysis-focused runs.",
+    )
     return parser.parse_args()
 
 
 def build_demo_state(
     issue_file: str,
+    repo_root: str,
 ) -> PatchWorkflowState:
     """Load a sample issue and create mock analysis findings for the patch demo."""
 
@@ -69,6 +79,7 @@ def build_demo_state(
 
     return PatchWorkflowState(
         issue=IssueContext(**issue_payload),
+        repository_root=repo_root,
         repository_findings=[
             RepositoryFinding(
                 file_path="src/auth/login_handler.py",
@@ -85,6 +96,23 @@ def build_demo_state(
                 line_end=55,
             ),
         ],
+    )
+
+
+def build_analysis_agent(config: AppConfig) -> CodebaseAnalysisAgent:
+    """Create the analysis agent with Ollama support and safe fallback."""
+
+    summary_generator = None
+    if config.use_ollama_for_analysis_agent:
+        summary_generator = OllamaAnalysisSummaryGenerator(
+            model_name=config.analysis_agent_model,
+            base_url=config.ollama_base_url,
+        )
+
+    return CodebaseAnalysisAgent(
+        output_dir=config.analysis_output_dir,
+        summary_generator=summary_generator,
+        allow_fallback=config.allow_analysis_fallback,
     )
 
 
@@ -106,19 +134,38 @@ def build_patch_agent(config: AppConfig) -> PatchGenerationAgent:
 
 
 def main() -> None:
-    """Run the patch-agent demo from the project root."""
+    """Run a selected agent demo from the project root."""
 
     args = parse_args()
     config = AppConfig()
     configure_logging(config)
     logger = logging.getLogger(__name__)
     logger.info(
-        "Application startup for Patch Generation Agent demo agent=%s",
+        "Application startup for local agent demo agent=%s",
         args.agent,
     )
     state = build_demo_state(
         issue_file=args.issue_file,
+        repo_root=args.repo_root,
     )
+    if args.agent == "analysis":
+        agent = build_analysis_agent(config)
+        updated_state = agent.run(state)
+        artifact = updated_state.analysis_output
+        assert artifact is not None
+        logger.info(
+            "Application completed analysis-agent demo for issue_id=%s artifact_path=%s",
+            artifact.summary.issue_id,
+            artifact.artifact_path,
+        )
+
+        print("Codebase Analysis Agent demo completed")
+        print(f"Issue ID: {artifact.summary.issue_id}")
+        print(f"Repository root: {artifact.summary.repo_path}")
+        print(f"Findings count: {len(artifact.summary.findings)}")
+        print(f"Artifact path: {artifact.artifact_path}")
+        return
+
     agent = build_patch_agent(config)
     updated_state = agent.run(state)
 

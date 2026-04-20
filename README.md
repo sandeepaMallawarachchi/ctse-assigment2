@@ -4,6 +4,7 @@ Starter scaffold for a multi-agent system (MAS) assignment that resolves softwar
 
 Current scope:
 - shared project structure
+- Codebase Analysis Agent starter files
 - Patch Generation Agent starter files
 - minimal placeholders for orchestration, app entrypoint, tools, and tests
 
