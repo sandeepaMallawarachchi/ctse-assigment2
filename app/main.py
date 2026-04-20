@@ -20,6 +20,7 @@ from agents.analysis_agent.agent import (
     CodebaseAnalysisAgent,
     OllamaAnalysisSummaryGenerator,
 )
+from agents.analysis_agent.schema import AnalysisArtifact
 from agents.patch_agent.agent import (
     OllamaPatchProposalGenerator,
     PatchGenerationAgent,
@@ -65,6 +66,11 @@ def parse_args() -> argparse.Namespace:
         default="data/repo_mock",
         help="Local repository path for analysis-focused runs.",
     )
+    parser.add_argument(
+        "--analysis-artifact",
+        default=None,
+        help="Optional analysis artifact JSON path to use for patch-agent runs.",
+    )
     return parser.parse_args()
 
 
@@ -97,6 +103,57 @@ def build_demo_state(
             ),
         ],
     )
+
+
+def _load_analysis_artifact(artifact_path: str) -> AnalysisArtifact:
+    """Load a serialized analysis artifact from disk.
+
+    Supports both the newer wrapped `AnalysisArtifact` JSON shape and the
+    existing summary-only artifact shape already written by this project.
+    """
+
+    payload = json.loads(Path(artifact_path).read_text(encoding="utf-8"))
+    if not (
+        isinstance(payload.get("summary"), dict)
+        and "artifact_path" in payload
+    ):
+        payload = {
+            "summary": payload,
+            "artifact_path": artifact_path,
+        }
+    if hasattr(AnalysisArtifact, "model_validate"):
+        return AnalysisArtifact.model_validate(payload)
+    return AnalysisArtifact.parse_obj(payload)
+
+
+def apply_analysis_artifact_to_state(
+    state: PatchWorkflowState,
+    artifact_path: str,
+) -> PatchWorkflowState:
+    """Populate shared state from a previously written analysis artifact.
+
+    Args:
+        state: Workflow state that will be updated for the patch stage.
+        artifact_path: Path to a serialized `AnalysisArtifact` JSON file.
+
+    Returns:
+        Updated state containing analysis output and repository findings.
+    """
+
+    artifact = _load_analysis_artifact(artifact_path)
+    state.repository_root = artifact.summary.repo_path
+    state.analysis_output = artifact
+    state.repository_findings = [
+        RepositoryFinding(
+            file_path=finding.file_path,
+            snippet=finding.snippet,
+            reason=finding.reason,
+            line_start=finding.line_start,
+            line_end=finding.line_end,
+        )
+        for finding in artifact.summary.findings
+    ]
+    return state
 
 
 def build_analysis_agent(config: AppConfig) -> CodebaseAnalysisAgent:
@@ -165,6 +222,13 @@ def main() -> None:
         print(f"Findings count: {len(artifact.summary.findings)}")
         print(f"Artifact path: {artifact.artifact_path}")
         return
+
+    if args.analysis_artifact:
+        logger.info(
+            "Application loading analysis artifact for patch run path=%s",
+            args.analysis_artifact,
+        )
+        state = apply_analysis_artifact_to_state(state, args.analysis_artifact)
 
     agent = build_patch_agent(config)
     updated_state = agent.run(state)
