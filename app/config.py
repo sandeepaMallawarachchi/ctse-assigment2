@@ -23,3 +23,11 @@ class AppConfig:
     )
     execution_log_path: str = os.getenv("EXECUTION_LOG_PATH", "logs/execution.log")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
+    validation_agent_model: str = os.getenv("VALIDATION_AGENT_MODEL", "llama3.1")
+    use_ollama_for_validation_agent: bool = (
+        os.getenv("USE_OLLAMA_FOR_VALIDATION_AGENT", "true").strip().lower() == "true"
+    )
+    validation_output_dir: str = os.getenv("VALIDATION_OUTPUT_DIR", "outputs/reports")
+    allow_validation_fallback: bool = (
+        os.getenv("ALLOW_VALIDATION_FALLBACK", "true").strip().lower() == "true"
+    )
