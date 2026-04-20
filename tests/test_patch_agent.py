@@ -41,6 +41,24 @@ class FakeProposalGenerator:
         )
 
 
+class EmptyProposalGenerator:
+    """Fake generator that simulates weak model output."""
+
+    def generate(self, state: PatchWorkflowState) -> PatchProposal:
+        """Return an incomplete proposal that should trigger fallback."""
+
+        return PatchProposal(
+            issue_id=state.issue.issue_id,
+            summary="Attempted patch proposal.",
+            target_files=[],
+            change_plan=[],
+            rationale="The model identified the general area but omitted file-level actions.",
+            risk_level="low",
+            risk_notes=[],
+            validation_focus=["Inspect login flow manually."],
+        )
+
+
 def test_collect_candidate_files_returns_unique_paths() -> None:
     """The helper should preserve order while removing duplicates."""
 
@@ -128,3 +146,42 @@ def test_patch_generation_agent_accepts_model_backed_structured_output(
     assert updated_state.patch_agent_output.proposal.summary.startswith("Reset the")
     assert "Issue Title: Fix login spinner state" in (fake_generator.last_prompt or "")
     assert "file=app/auth.py" in (fake_generator.last_prompt or "")
+
+
+def test_patch_generation_agent_falls_back_on_empty_model_output(
+    tmp_path: Path,
+) -> None:
+    """Incomplete model output should be replaced with a usable fallback proposal."""
+
+    state = PatchWorkflowState(
+        issue=IssueContext(
+            issue_id="ISSUE-005",
+            title="Fix loading spinner after error",
+            description="The spinner stays active after an API error.",
+        ),
+        repository_findings=[
+            RepositoryFinding(
+                file_path="app/auth.py",
+                snippet="spinner = True",
+                reason="The failure path does not appear to clear loading state.",
+            ),
+            RepositoryFinding(
+                file_path="app/ui.py",
+                snippet="submit_button.loading = state.loading",
+                reason="The UI reflects the stale loading state.",
+            ),
+        ],
+    )
+
+    agent = PatchGenerationAgent(
+        output_dir=str(tmp_path),
+        proposal_generator=EmptyProposalGenerator(),
+    )
+    updated_state = agent.run(state)
+
+    assert updated_state.patch_agent_output is not None
+    assert updated_state.patch_agent_output.proposal.target_files == [
+        "app/auth.py",
+        "app/ui.py",
+    ]
+    assert len(updated_state.patch_agent_output.proposal.change_plan) == 2

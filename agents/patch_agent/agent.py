@@ -106,7 +106,9 @@ class PatchGenerationAgent:
             return self._build_fallback_proposal(state)
 
         try:
-            return self.proposal_generator.generate(state)
+            proposal = self.proposal_generator.generate(state)
+            self._validate_proposal_quality(proposal)
+            return proposal
         except Exception as exc:
             if not self.allow_fallback:
                 raise
@@ -153,3 +155,27 @@ class PatchGenerationAgent:
             ],
             validation_focus=build_validation_focus(state.repository_findings),
         )
+
+    def _validate_proposal_quality(self, proposal: PatchProposal) -> None:
+        """Reject incomplete model output before it reaches validation.
+
+        Args:
+            proposal: Structured proposal returned by the model-backed generator.
+
+        Raises:
+            ValueError: If essential patch fields are empty or inconsistent.
+        """
+
+        if not proposal.target_files:
+            raise ValueError("Model output must include at least one target file.")
+
+        if not proposal.change_plan:
+            raise ValueError("Model output must include at least one change-plan item.")
+
+        planned_files = {item.file_path for item in proposal.change_plan}
+        missing_targets = [path for path in proposal.target_files if path not in planned_files]
+        if missing_targets:
+            raise ValueError(
+                "Model output has target files without matching change-plan entries: "
+                + ", ".join(missing_targets)
+            )
