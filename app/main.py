@@ -25,6 +25,10 @@ from agents.patch_agent.agent import (
     OllamaPatchProposalGenerator,
     PatchGenerationAgent,
 )
+from agents.validation_agent.agent import (
+    OllamaValidationVerdictGenerator,
+    ValidationAgent,
+)
 from app.config import AppConfig
 from orchestrator.state import IssueContext, PatchWorkflowState, RepositoryFinding
 
@@ -79,7 +83,7 @@ def prompt_for_run_mode() -> str:
     print("Select what to run:")
     print("1. Codebase Analysis Agent")
     print("2. Patch Generation Agent")
-    print("3. Full Flow (Analysis -> Patch)")
+    print("3. Full Flow (Analysis -> Patch -> Validation)")
 
     option_to_mode = {
         "1": "analysis",
@@ -249,6 +253,45 @@ def run_patch_stage(
     return updated_state
 
 
+def build_validation_agent(config: AppConfig) -> ValidationAgent:
+    """Create the validation agent with Ollama support and safe fallback."""
+
+    verdict_generator = None
+    if config.use_ollama_for_validation_agent:
+        verdict_generator = OllamaValidationVerdictGenerator(
+            model_name=config.validation_agent_model,
+            base_url=config.ollama_base_url,
+        )
+
+    return ValidationAgent(
+        output_dir=config.validation_output_dir,
+        verdict_generator=verdict_generator,
+        allow_fallback=config.allow_validation_fallback,
+    )
+
+
+def run_validation_stage(
+    state: PatchWorkflowState,
+    config: AppConfig,
+) -> PatchWorkflowState:
+    """Run the Validation & Report Agent and print a short summary."""
+
+    agent = build_validation_agent(config)
+    updated_state = agent.run(state)
+    report = updated_state.validation_output.report
+    verdict = report.verdict
+
+    print("Validation & Report Agent completed")
+    print(f"Issue ID: {report.issue_id}")
+    print(f"Verdict  : {verdict.status} (confidence: {verdict.confidence})")
+    print(f"Checks   : {verdict.checks_passed} passed, "
+          f"{verdict.checks_failed} failed, {verdict.checks_warned} warned")
+    print(f"Assessment  : {report.llm_assessment}")
+    print(f"Recommend   : {report.recommendation}")
+    print(f"Report path : {updated_state.validation_output.artifact_path}")
+    return updated_state
+
+
 def main() -> None:
     """Run a selected agent or connected demo flow from the project root."""
 
@@ -313,6 +356,16 @@ def main() -> None:
         patch_artifact.proposal.issue_id,
         analysis_artifact.artifact_path,
         patch_artifact.artifact_path,
+    )
+
+    updated_state = run_validation_stage(updated_state, config)
+    validation_artifact = updated_state.validation_output
+    assert validation_artifact is not None
+    logger.info(
+        "Application completed validation stage for issue_id=%s verdict=%s report_path=%s",
+        validation_artifact.report.issue_id,
+        validation_artifact.report.verdict.status,
+        validation_artifact.artifact_path,
     )
 
 

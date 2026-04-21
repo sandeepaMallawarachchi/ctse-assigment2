@@ -88,6 +88,8 @@ def _make_valid_state(
         patch_agent_output=PatchArtifact(
             proposal=p,
             artifact_path=artifact_path,
+            patch_draft="--- a/app/auth.py\n+++ b/app/auth.py\n@@ -1 +1 @@\n-pass\n+pass  # stub",
+            patch_draft_path="outputs/patches/ISSUE-010_patch.diff",
         ),
     )
 

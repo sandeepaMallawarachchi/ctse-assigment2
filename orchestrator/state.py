@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from agents.analysis_agent.schema import AnalysisArtifact
 from agents.patch_agent.schema import PatchArtifact
+from agents.validation_agent.schema import ValidationArtifact
 
 
 class IssueContext(BaseModel):
@@ -59,4 +60,8 @@ class PatchWorkflowState(BaseModel):
     patch_agent_output: Optional[PatchArtifact] = Field(
         default=None,
         description="Structured patch proposal prepared for validation.",
+    )
+    validation_output: Optional[ValidationArtifact] = Field(
+        default=None,
+        description="Validation result and final report from the Validation Agent.",
     )
