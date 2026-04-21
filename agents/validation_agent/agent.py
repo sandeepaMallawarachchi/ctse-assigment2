@@ -183,22 +183,71 @@ class ValidationAgent:
         proposal: PatchProposal = state.patch_agent_output.proposal
 
         logger.info(
-            "ValidationAgent: starting validation for issue '%s'.",
+            "ValidationAgent started for issue_id=%s title=%r risk_level=%s target_files=%s",
             proposal.issue_id,
+            proposal.issue_id,
+            proposal.risk_level,
+            ",".join(proposal.target_files) or "(none)",
         )
 
         checks = run_structural_checks(proposal)
+
+        passed = sum(1 for c in checks if c.status == "pass")
+        failed = sum(1 for c in checks if c.status == "fail")
+        warned = sum(1 for c in checks if c.status == "warning")
+
+        for check in checks:
+            logger.debug(
+                "ValidationAgent structural_check name=%s status=%s detail=%r",
+                check.name,
+                check.status,
+                check.detail,
+            )
+
         logger.info(
-            "ValidationAgent: structural checks complete — "
-            "%d passed, %d failed, %d warned.",
-            sum(1 for c in checks if c.status == "pass"),
-            sum(1 for c in checks if c.status == "fail"),
-            sum(1 for c in checks if c.status == "warning"),
+            "ValidationAgent structural checks complete for issue_id=%s "
+            "passed=%d failed=%d warned=%d",
+            proposal.issue_id,
+            passed,
+            failed,
+            warned,
         )
+
+        if failed > 0:
+            failed_names = [c.name for c in checks if c.status == "fail"]
+            logger.warning(
+                "ValidationAgent issue_id=%s has %d failed check(s): %s",
+                proposal.issue_id,
+                failed,
+                ", ".join(failed_names),
+            )
+
+        if warned > 0:
+            warned_names = [c.name for c in checks if c.status == "warning"]
+            logger.warning(
+                "ValidationAgent issue_id=%s has %d warning(s): %s",
+                proposal.issue_id,
+                warned,
+                ", ".join(warned_names),
+            )
 
         verdict, llm_assessment = self._generate_verdict(state, checks, proposal)
 
+        logger.info(
+            "ValidationAgent verdict for issue_id=%s status=%s confidence=%s rationale=%r",
+            proposal.issue_id,
+            verdict.status,
+            verdict.confidence,
+            verdict.rationale,
+        )
+
         recommendation = self._build_recommendation(verdict.status, proposal.risk_level)
+
+        logger.debug(
+            "ValidationAgent recommendation for issue_id=%s: %r",
+            proposal.issue_id,
+            recommendation,
+        )
 
         report = FinalReport(
             issue_id=proposal.issue_id,
@@ -217,9 +266,12 @@ class ValidationAgent:
         )
 
         logger.info(
-            "ValidationAgent: report written to '%s' with verdict '%s'.",
-            state.validation_output.artifact_path,
+            "ValidationAgent completed for issue_id=%s verdict=%s confidence=%s "
+            "artifact_path=%s",
+            proposal.issue_id,
             verdict.status,
+            verdict.confidence,
+            state.validation_output.artifact_path,
         )
 
         return state
@@ -242,16 +294,33 @@ class ValidationAgent:
         """
 
         if self.verdict_generator is None:
+            logger.info(
+                "ValidationAgent using deterministic verdict for issue_id=%s",
+                proposal.issue_id,
+            )
             return self._build_fallback_verdict(checks, proposal)
 
         try:
-            return self.verdict_generator.generate(state, checks)
+            logger.info(
+                "ValidationAgent requesting model-backed verdict for issue_id=%s",
+                proposal.issue_id,
+            )
+            verdict, assessment = self.verdict_generator.generate(state, checks)
+            logger.info(
+                "ValidationAgent accepted model-backed verdict for issue_id=%s",
+                proposal.issue_id,
+            )
+            return verdict, assessment
         except Exception as exc:
             if not self.allow_fallback:
+                logger.exception(
+                    "ValidationAgent failed without fallback for issue_id=%s",
+                    proposal.issue_id,
+                )
                 raise
             logger.warning(
-                "ValidationAgent: verdict generator failed; "
-                "using deterministic fallback: %s",
+                "ValidationAgent falling back for issue_id=%s reason=%s",
+                proposal.issue_id,
                 exc,
             )
             return self._build_fallback_verdict(checks, proposal)
@@ -274,6 +343,16 @@ class ValidationAgent:
         verdict = compute_verdict(checks, proposal.risk_level)
         failed_names = [c.name for c in checks if c.status == "fail"]
         warned_names = [c.name for c in checks if c.status == "warning"]
+
+        logger.info(
+            "ValidationAgent deterministic verdict for issue_id=%s "
+            "status=%s confidence=%s failed=%s warned=%s",
+            proposal.issue_id,
+            verdict.status,
+            verdict.confidence,
+            ",".join(failed_names) or "none",
+            ",".join(warned_names) or "none",
+        )
 
         parts: list[str] = [
             f"Deterministic review of proposal for '{proposal.issue_id}'."
