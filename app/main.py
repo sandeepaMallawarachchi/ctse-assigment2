@@ -56,7 +56,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a local agent demo.")
     parser.add_argument(
         "--run",
-        choices=["analysis", "patch", "full"],
+        choices=["analysis", "patch", "validation", "full"],
         help="Choose a single agent or the currently connected full flow.",
     )
     parser.add_argument(
@@ -83,19 +83,21 @@ def prompt_for_run_mode() -> str:
     print("Select what to run:")
     print("1. Codebase Analysis Agent")
     print("2. Patch Generation Agent")
-    print("3. Full Flow (Analysis -> Patch -> Validation)")
+    print("3. Validation & Report Agent")
+    print("4. Full Flow (Analysis -> Patch -> Validation)")
 
     option_to_mode = {
         "1": "analysis",
         "2": "patch",
-        "3": "full",
+        "3": "validation",
+        "4": "full",
     }
 
     while True:
         selected_option = input("Enter option number: ").strip()
         if selected_option in option_to_mode:
             return option_to_mode[selected_option]
-        print("Invalid option. Please enter 1, 2, or 3.")
+        print("Invalid option. Please enter 1, 2, 3, or 4.")
 
 
 def build_demo_state(
@@ -335,6 +337,19 @@ def main() -> None:
             artifact.proposal.issue_id,
             artifact.artifact_path,
             artifact.patch_draft_path,
+        )
+        return
+
+    if run_mode == "validation":
+        updated_state = run_patch_stage(state, config)
+        updated_state = run_validation_stage(updated_state, config)
+        artifact = updated_state.validation_output
+        assert artifact is not None
+        logger.info(
+            "Application completed validation-agent demo for issue_id=%s verdict=%s report_path=%s",
+            artifact.report.issue_id,
+            artifact.report.verdict.status,
+            artifact.artifact_path,
         )
         return
 
