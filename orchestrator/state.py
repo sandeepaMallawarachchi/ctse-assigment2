@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from agents.analysis_agent.schema import AnalysisArtifact
 from agents.patch_agent.schema import PatchArtifact
+from agents.triage_agent.schema import TriageArtifact
 from agents.validation_agent.schema import ValidationArtifact
 
 
@@ -53,6 +54,10 @@ class PatchWorkflowState(BaseModel):
         description="Local repository path that analysis tools should inspect.",
     )
     repository_findings: list[RepositoryFinding] = Field(default_factory=list)
+    triage_output: Optional[TriageArtifact] = Field(
+        default=None,
+        description="Structured triage result produced by the Triage Agent.",
+    )
     analysis_output: Optional[AnalysisArtifact] = Field(
         default=None,
         description="Structured analysis result produced by the Codebase Analysis Agent.",

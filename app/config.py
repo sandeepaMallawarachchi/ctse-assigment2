@@ -13,6 +13,14 @@ class AppConfig:
     """Minimal application configuration container."""
 
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    triage_agent_model: str = os.getenv("TRIAGE_AGENT_MODEL", "llama3.1")
+    use_ollama_for_triage_agent: bool = (
+        os.getenv("USE_OLLAMA_FOR_TRIAGE_AGENT", "true").strip().lower() == "true"
+    )
+    triage_output_dir: str = os.getenv("TRIAGE_OUTPUT_DIR", "outputs/reports")
+    allow_triage_fallback: bool = (
+        os.getenv("ALLOW_TRIAGE_FALLBACK", "true").strip().lower() == "true"
+    )
     analysis_agent_model: str = os.getenv("ANALYSIS_AGENT_MODEL", "llama3.1")
     use_ollama_for_analysis_agent: bool = (
         os.getenv("USE_OLLAMA_FOR_ANALYSIS_AGENT", "true").strip().lower() == "true"
@@ -29,8 +37,6 @@ class AppConfig:
     allow_patch_fallback: bool = (
         os.getenv("ALLOW_PATCH_FALLBACK", "true").strip().lower() == "true"
     )
-    execution_log_path: str = os.getenv("EXECUTION_LOG_PATH", "logs/execution.log")
-    log_level: str = os.getenv("LOG_LEVEL", "INFO")
     validation_agent_model: str = os.getenv("VALIDATION_AGENT_MODEL", "llama3.1")
     use_ollama_for_validation_agent: bool = (
         os.getenv("USE_OLLAMA_FOR_VALIDATION_AGENT", "true").strip().lower() == "true"
@@ -39,3 +45,5 @@ class AppConfig:
     allow_validation_fallback: bool = (
         os.getenv("ALLOW_VALIDATION_FALLBACK", "true").strip().lower() == "true"
     )
+    execution_log_path: str = os.getenv("EXECUTION_LOG_PATH", "logs/execution.log")
+    log_level: str = os.getenv("LOG_LEVEL", "INFO")
