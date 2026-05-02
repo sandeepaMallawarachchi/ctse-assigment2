@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from agents.analysis_agent.agent import CodebaseAnalysisAgent
+from agents.triage_agent.schema import TriageArtifact, TriageSummary
 from orchestrator.state import IssueContext, PatchWorkflowState
 from tools.analysis_tools.code_search import derive_search_terms, search_repository
 
@@ -70,3 +71,42 @@ def test_codebase_analysis_agent_writes_analysis_artifact(tmp_path: Path) -> Non
     payload = json.loads(artifact_path.read_text(encoding="utf-8"))
     assert payload["issue_id"] == "ISSUE-100"
     assert payload["repo_path"] == "data/repo_mock"
+
+
+def test_codebase_analysis_agent_uses_triage_keywords_when_available(
+    tmp_path: Path,
+) -> None:
+    """Analysis should consume triage keywords when that stage has already run."""
+
+    state = PatchWorkflowState(
+        issue=IssueContext(
+            issue_id="ISSUE-101",
+            title="Fix login button spinner not stopping",
+            description="Spinner stays active after a failed login.",
+            expected_behavior="Spinner should stop after failed authentication.",
+        ),
+        repository_root="data/repo_mock",
+        triage_output=TriageArtifact(
+            summary=TriageSummary(
+                issue_id="ISSUE-101",
+                issue_type="bug",
+                priority="medium",
+                normalized_title="Fix login button spinner not stopping",
+                normalized_description="Spinner stays active after a failed login.",
+                expected_behavior="Spinner should stop after failed authentication.",
+                search_keywords=["login", "spinner", "failed"],
+                summary="Prepared triage keywords for downstream analysis.",
+            ),
+            artifact_path="outputs/reports/ISSUE-101_triage.json",
+        ),
+    )
+
+    agent = CodebaseAnalysisAgent(output_dir=str(tmp_path))
+    updated_state = agent.run(state)
+
+    assert updated_state.analysis_output is not None
+    assert updated_state.analysis_output.summary.search_terms == [
+        "login",
+        "spinner",
+        "failed",
+    ]

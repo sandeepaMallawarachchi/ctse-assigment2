@@ -35,6 +35,20 @@ def test_patch_workflow_state_starts_without_analysis_output() -> None:
     assert state.analysis_output is None
 
 
+def test_patch_workflow_state_starts_without_triage_output() -> None:
+    """Shared workflow state should allow the triage stage to populate later."""
+
+    state = PatchWorkflowState(
+        issue=IssueContext(
+            issue_id="ISSUE-007",
+            title="Example issue",
+            description="Example description",
+        )
+    )
+
+    assert state.triage_output is None
+
+
 def test_apply_analysis_artifact_to_state_populates_findings(tmp_path: Path) -> None:
     """Patch runs should be able to consume a prior analysis artifact."""
 

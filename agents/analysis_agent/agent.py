@@ -95,11 +95,14 @@ class CodebaseAnalysisAgent:
             state.issue.issue_id,
             state.repository_root,
         )
-        search_terms = derive_search_terms(
-            title=state.issue.title,
-            description=state.issue.description,
-            expected_behavior=state.issue.expected_behavior,
-        )
+        if state.triage_output is not None and state.triage_output.summary.search_keywords:
+            search_terms = state.triage_output.summary.search_keywords
+        else:
+            search_terms = derive_search_terms(
+                title=state.issue.title,
+                description=state.issue.description,
+                expected_behavior=state.issue.expected_behavior,
+            )
         search_results = search_repository(
             repo_root=state.repository_root,
             search_terms=search_terms,

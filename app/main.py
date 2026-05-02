@@ -25,10 +25,7 @@ from agents.patch_agent.agent import (
     OllamaPatchProposalGenerator,
     PatchGenerationAgent,
 )
-from agents.validation_agent.agent import (
-    OllamaValidationVerdictGenerator,
-    ValidationAgent,
-)
+from agents.triage_agent.agent import OllamaTriageSummaryGenerator, TriageAgent
 from app.config import AppConfig
 from orchestrator.state import IssueContext, PatchWorkflowState, RepositoryFinding
 
@@ -56,7 +53,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a local agent demo.")
     parser.add_argument(
         "--run",
-        choices=["analysis", "patch", "full"],
+        choices=["triage", "analysis", "patch", "full"],
         help="Choose a single agent or the currently connected full flow.",
     )
     parser.add_argument(
@@ -81,21 +78,23 @@ def prompt_for_run_mode() -> str:
     """Prompt the user to choose a runnable mode from the terminal menu."""
 
     print("Select what to run:")
-    print("1. Codebase Analysis Agent")
-    print("2. Patch Generation Agent")
-    print("3. Full Flow (Analysis -> Patch -> Validation)")
+    print("1. Triage Agent")
+    print("2. Codebase Analysis Agent")
+    print("3. Patch Generation Agent")
+    print("4. Full Flow (Triage -> Analysis -> Patch)")
 
     option_to_mode = {
-        "1": "analysis",
-        "2": "patch",
-        "3": "full",
+        "1": "triage",
+        "2": "analysis",
+        "3": "patch",
+        "4": "full",
     }
 
     while True:
         selected_option = input("Enter option number: ").strip()
         if selected_option in option_to_mode:
             return option_to_mode[selected_option]
-        print("Invalid option. Please enter 1, 2, or 3.")
+        print("Invalid option. Please enter 1, 2, 3, or 4.")
 
 
 def build_demo_state(
@@ -197,6 +196,23 @@ def build_analysis_agent(config: AppConfig) -> CodebaseAnalysisAgent:
     )
 
 
+def build_triage_agent(config: AppConfig) -> TriageAgent:
+    """Create the triage agent with Ollama support and safe fallback."""
+
+    summary_generator = None
+    if config.use_ollama_for_triage_agent:
+        summary_generator = OllamaTriageSummaryGenerator(
+            model_name=config.triage_agent_model,
+            base_url=config.ollama_base_url,
+        )
+
+    return TriageAgent(
+        output_dir=config.triage_output_dir,
+        summary_generator=summary_generator,
+        allow_fallback=config.allow_triage_fallback,
+    )
+
+
 def build_patch_agent(config: AppConfig) -> PatchGenerationAgent:
     """Create the patch agent with Ollama support and safe fallback."""
 
@@ -233,6 +249,26 @@ def run_analysis_stage(
     return updated_state
 
 
+def run_triage_stage(
+    state: PatchWorkflowState,
+    config: AppConfig,
+) -> PatchWorkflowState:
+    """Run the Triage Agent and print a short summary."""
+
+    agent = build_triage_agent(config)
+    updated_state = agent.run(state)
+    artifact = updated_state.triage_output
+    assert artifact is not None
+
+    print("Triage Agent demo completed")
+    print(f"Issue ID: {artifact.summary.issue_id}")
+    print(f"Issue type: {artifact.summary.issue_type}")
+    print(f"Priority: {artifact.summary.priority}")
+    print(f"Keywords: {', '.join(artifact.summary.search_keywords)}")
+    print(f"Artifact path: {artifact.artifact_path}")
+    return updated_state
+
+
 def run_patch_stage(
     state: PatchWorkflowState,
     config: AppConfig,
@@ -253,45 +289,6 @@ def run_patch_stage(
     return updated_state
 
 
-def build_validation_agent(config: AppConfig) -> ValidationAgent:
-    """Create the validation agent with Ollama support and safe fallback."""
-
-    verdict_generator = None
-    if config.use_ollama_for_validation_agent:
-        verdict_generator = OllamaValidationVerdictGenerator(
-            model_name=config.validation_agent_model,
-            base_url=config.ollama_base_url,
-        )
-
-    return ValidationAgent(
-        output_dir=config.validation_output_dir,
-        verdict_generator=verdict_generator,
-        allow_fallback=config.allow_validation_fallback,
-    )
-
-
-def run_validation_stage(
-    state: PatchWorkflowState,
-    config: AppConfig,
-) -> PatchWorkflowState:
-    """Run the Validation & Report Agent and print a short summary."""
-
-    agent = build_validation_agent(config)
-    updated_state = agent.run(state)
-    report = updated_state.validation_output.report
-    verdict = report.verdict
-
-    print("Validation & Report Agent completed")
-    print(f"Issue ID: {report.issue_id}")
-    print(f"Verdict  : {verdict.status} (confidence: {verdict.confidence})")
-    print(f"Checks   : {verdict.checks_passed} passed, "
-          f"{verdict.checks_failed} failed, {verdict.checks_warned} warned")
-    print(f"Assessment  : {report.llm_assessment}")
-    print(f"Recommend   : {report.recommendation}")
-    print(f"Report path : {updated_state.validation_output.artifact_path}")
-    return updated_state
-
-
 def main() -> None:
     """Run a selected agent or connected demo flow from the project root."""
 
@@ -308,6 +305,17 @@ def main() -> None:
         issue_file=args.issue_file,
         repo_root=args.repo_root,
     )
+    if run_mode == "triage":
+        updated_state = run_triage_stage(state, config)
+        artifact = updated_state.triage_output
+        assert artifact is not None
+        logger.info(
+            "Application completed triage-agent demo for issue_id=%s artifact_path=%s",
+            artifact.summary.issue_id,
+            artifact.artifact_path,
+        )
+        return
+
     if run_mode == "analysis":
         updated_state = run_analysis_stage(state, config)
         artifact = updated_state.analysis_output
@@ -338,8 +346,17 @@ def main() -> None:
         )
         return
 
-    logger.info("Application starting connected full flow: analysis -> patch")
-    updated_state = run_analysis_stage(state, config)
+    logger.info("Application starting connected full flow: triage -> analysis -> patch")
+    updated_state = run_triage_stage(state, config)
+    triage_artifact = updated_state.triage_output
+    assert triage_artifact is not None
+    logger.info(
+        "Application completed triage stage for full flow issue_id=%s artifact_path=%s",
+        triage_artifact.summary.issue_id,
+        triage_artifact.artifact_path,
+    )
+
+    updated_state = run_analysis_stage(updated_state, config)
     analysis_artifact = updated_state.analysis_output
     assert analysis_artifact is not None
     logger.info(
@@ -352,20 +369,11 @@ def main() -> None:
     patch_artifact = updated_state.patch_agent_output
     assert patch_artifact is not None
     logger.info(
-        "Application completed full flow for issue_id=%s analysis_artifact=%s patch_artifact=%s",
+        "Application completed full flow for issue_id=%s triage_artifact=%s analysis_artifact=%s patch_artifact=%s",
         patch_artifact.proposal.issue_id,
+        triage_artifact.artifact_path,
         analysis_artifact.artifact_path,
         patch_artifact.artifact_path,
-    )
-
-    updated_state = run_validation_stage(updated_state, config)
-    validation_artifact = updated_state.validation_output
-    assert validation_artifact is not None
-    logger.info(
-        "Application completed validation stage for issue_id=%s verdict=%s report_path=%s",
-        validation_artifact.report.issue_id,
-        validation_artifact.report.verdict.status,
-        validation_artifact.artifact_path,
     )
 
 
