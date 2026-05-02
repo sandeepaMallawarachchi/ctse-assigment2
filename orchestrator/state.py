@@ -53,6 +53,10 @@ class PatchWorkflowState(BaseModel):
         default="data/repo_mock",
         description="Local repository path that analysis tools should inspect.",
     )
+    target_code_file: Optional[str] = Field(
+        default=None,
+        description="Optional specific local file path the agents should focus on.",
+    )
     repository_findings: list[RepositoryFinding] = Field(default_factory=list)
     triage_output: Optional[TriageArtifact] = Field(
         default=None,

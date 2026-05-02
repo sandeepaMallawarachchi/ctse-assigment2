@@ -11,6 +11,7 @@ import json
 import logging
 from pathlib import Path
 import sys
+from typing import Any, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -75,6 +76,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional analysis artifact JSON path to use for patch-agent runs.",
     )
+    parser.add_argument(
+        "--code-file",
+        default=None,
+        help="Optional local code file path to focus the agents on.",
+    )
     return parser.parse_args()
 
 
@@ -106,15 +112,31 @@ def prompt_for_run_mode() -> str:
 def build_demo_state(
     issue_file: str,
     repo_root: str,
+    code_file: Optional[str] = None,
 ) -> PatchWorkflowState:
     """Load a sample issue and create mock analysis findings for the patch demo."""
 
     sample_issue_path = Path(issue_file)
     issue_payload = json.loads(sample_issue_path.read_text(encoding="utf-8"))
 
+    return build_state_from_issue_payload(
+        issue_payload=issue_payload,
+        repo_root=repo_root,
+        code_file=code_file,
+    )
+
+
+def build_state_from_issue_payload(
+    issue_payload: dict[str, Any],
+    repo_root: str,
+    code_file: Optional[str] = None,
+) -> PatchWorkflowState:
+    """Build shared workflow state from an in-memory issue payload."""
+
     return PatchWorkflowState(
         issue=IssueContext(**issue_payload),
         repository_root=repo_root,
+        target_code_file=code_file,
         repository_findings=[
             RepositoryFinding(
                 file_path="src/auth/login_handler.py",
@@ -132,6 +154,188 @@ def build_demo_state(
             ),
         ],
     )
+
+
+def _triage_artifact_to_dict(state: PatchWorkflowState) -> dict[str, Any] | None:
+    """Serialize triage output into a UI-friendly dictionary."""
+
+    if state.triage_output is None:
+        return None
+    summary = state.triage_output.summary
+    return {
+        "issue_id": summary.issue_id,
+        "issue_type": summary.issue_type,
+        "priority": summary.priority,
+        "normalized_title": summary.normalized_title,
+        "normalized_description": summary.normalized_description,
+        "expected_behavior": summary.expected_behavior,
+        "search_keywords": summary.search_keywords,
+        "summary": summary.summary,
+        "artifact_path": state.triage_output.artifact_path,
+    }
+
+
+def _analysis_artifact_to_dict(state: PatchWorkflowState) -> dict[str, Any] | None:
+    """Serialize analysis output into a UI-friendly dictionary."""
+
+    if state.analysis_output is None:
+        return None
+    summary = state.analysis_output.summary
+    return {
+        "issue_id": summary.issue_id,
+        "repo_path": summary.repo_path,
+        "search_terms": summary.search_terms,
+        "findings": [
+            {
+                "file_path": finding.file_path,
+                "snippet": finding.snippet,
+                "reason": finding.reason,
+                "line_start": finding.line_start,
+                "line_end": finding.line_end,
+            }
+            for finding in summary.findings
+        ],
+        "summary": summary.summary,
+        "artifact_path": state.analysis_output.artifact_path,
+    }
+
+
+def _patch_artifact_to_dict(state: PatchWorkflowState) -> dict[str, Any] | None:
+    """Serialize patch output into a UI-friendly dictionary."""
+
+    if state.patch_agent_output is None:
+        return None
+    proposal = state.patch_agent_output.proposal
+    return {
+        "issue_id": proposal.issue_id,
+        "summary": proposal.summary,
+        "target_files": proposal.target_files,
+        "change_plan": [
+            {
+                "file_path": change.file_path,
+                "change_summary": change.change_summary,
+                "evidence": change.evidence,
+            }
+            for change in proposal.change_plan
+        ],
+        "rationale": proposal.rationale,
+        "risk_level": proposal.risk_level,
+        "risk_notes": proposal.risk_notes,
+        "validation_focus": proposal.validation_focus,
+        "artifact_path": state.patch_agent_output.artifact_path,
+        "patch_draft_path": state.patch_agent_output.patch_draft_path,
+        "patch_draft": state.patch_agent_output.patch_draft,
+    }
+
+
+def _validation_artifact_to_dict(state: PatchWorkflowState) -> dict[str, Any] | None:
+    """Serialize validation output into a UI-friendly dictionary."""
+
+    if state.validation_output is None:
+        return None
+    report = state.validation_output.report
+    verdict = report.verdict
+    return {
+        "issue_id": report.issue_id,
+        "patch_summary": report.patch_summary,
+        "target_files": report.target_files,
+        "risk_level": report.risk_level,
+        "checks": [
+            {
+                "name": check.name,
+                "status": check.status,
+                "detail": check.detail,
+            }
+            for check in report.checks
+        ],
+        "verdict": {
+            "status": verdict.status,
+            "confidence": verdict.confidence,
+            "rationale": verdict.rationale,
+            "checks_passed": verdict.checks_passed,
+            "checks_failed": verdict.checks_failed,
+            "checks_warned": verdict.checks_warned,
+        },
+        "llm_assessment": report.llm_assessment,
+        "recommendation": report.recommendation,
+        "artifact_path": state.validation_output.artifact_path,
+    }
+
+
+def build_result_payload(
+    run_mode: str,
+    state: PatchWorkflowState,
+) -> dict[str, Any]:
+    """Build a structured result payload for CLI-independent consumers."""
+
+    return {
+        "run_mode": run_mode,
+        "issue": {
+            "issue_id": state.issue.issue_id,
+            "title": state.issue.title,
+            "description": state.issue.description,
+            "expected_behavior": state.issue.expected_behavior,
+        },
+        "repository_root": state.repository_root,
+        "target_code_file": state.target_code_file,
+        "triage": _triage_artifact_to_dict(state),
+        "analysis": _analysis_artifact_to_dict(state),
+        "patch": _patch_artifact_to_dict(state),
+        "validation": _validation_artifact_to_dict(state),
+    }
+
+
+def execute_run_mode(
+    run_mode: str,
+    state: PatchWorkflowState,
+    config: AppConfig,
+    analysis_artifact_path: Optional[str] = None,
+    emit_console: bool = True,
+) -> PatchWorkflowState:
+    """Execute a selected agent or flow and return the updated state."""
+
+    logger = logging.getLogger(__name__)
+
+    if run_mode == "triage":
+        return run_triage_stage(state, config) if emit_console else build_triage_agent(config).run(state)
+
+    if run_mode == "analysis":
+        return run_analysis_stage(state, config) if emit_console else build_analysis_agent(config).run(state)
+
+    if run_mode in {"patch", "validation"} and analysis_artifact_path:
+        logger.info(
+            "Application loading analysis artifact for run mode=%s path=%s",
+            run_mode,
+            analysis_artifact_path,
+        )
+        state = apply_analysis_artifact_to_state(state, analysis_artifact_path)
+
+    if run_mode == "patch":
+        if state.target_code_file and not analysis_artifact_path:
+            logger.info(
+                "Application running analysis before patch for target_code_file=%s",
+                state.target_code_file,
+            )
+            state = run_analysis_stage(state, config) if emit_console else build_analysis_agent(config).run(state)
+        return run_patch_stage(state, config) if emit_console else build_patch_agent(config).run(state)
+
+    if run_mode == "validation":
+        if state.target_code_file and not analysis_artifact_path:
+            logger.info(
+                "Application running analysis before validation for target_code_file=%s",
+                state.target_code_file,
+            )
+            state = run_analysis_stage(state, config) if emit_console else build_analysis_agent(config).run(state)
+        state = run_patch_stage(state, config) if emit_console else build_patch_agent(config).run(state)
+        return run_validation_stage(state, config) if emit_console else build_validation_agent(config).run(state)
+
+    logger.info(
+        "Application starting connected full flow: triage -> analysis -> patch -> validation"
+    )
+    state = run_triage_stage(state, config) if emit_console else build_triage_agent(config).run(state)
+    state = run_analysis_stage(state, config) if emit_console else build_analysis_agent(config).run(state)
+    state = run_patch_stage(state, config) if emit_console else build_patch_agent(config).run(state)
+    return run_validation_stage(state, config) if emit_console else build_validation_agent(config).run(state)
 
 
 def _load_analysis_artifact(artifact_path: str) -> AnalysisArtifact:
@@ -267,6 +471,8 @@ def run_analysis_stage(
     print("Codebase Analysis Agent demo completed")
     print(f"Issue ID: {artifact.summary.issue_id}")
     print(f"Repository root: {artifact.summary.repo_path}")
+    if state.target_code_file:
+        print(f"Target code file: {state.target_code_file}")
     print(f"Findings count: {len(artifact.summary.findings)}")
     print(f"Artifact path: {artifact.artifact_path}")
     return updated_state
@@ -305,6 +511,8 @@ def run_patch_stage(
 
     print("Patch Generation Agent demo completed")
     print(f"Issue ID: {artifact.proposal.issue_id}")
+    if state.target_code_file:
+        print(f"Target code file: {state.target_code_file}")
     print(f"Target files: {', '.join(artifact.proposal.target_files)}")
     print(f"Risk level: {artifact.proposal.risk_level}")
     print(f"Artifact path: {artifact.artifact_path}")
@@ -327,6 +535,8 @@ def run_validation_stage(
 
     print("Validation & Report Agent completed")
     print(f"Issue ID: {report.issue_id}")
+    if state.target_code_file:
+        print(f"Target code file: {state.target_code_file}")
     print(f"Verdict: {verdict.status} (confidence: {verdict.confidence})")
     print(
         f"Checks: {verdict.checks_passed} passed, "
@@ -353,101 +563,20 @@ def main() -> None:
     state = build_demo_state(
         issue_file=args.issue_file,
         repo_root=args.repo_root,
+        code_file=args.code_file,
     )
-    if run_mode == "triage":
-        updated_state = run_triage_stage(state, config)
-        artifact = updated_state.triage_output
-        assert artifact is not None
-        logger.info(
-            "Application completed triage-agent demo for issue_id=%s artifact_path=%s",
-            artifact.summary.issue_id,
-            artifact.artifact_path,
-        )
-        return
-
-    if run_mode == "analysis":
-        updated_state = run_analysis_stage(state, config)
-        artifact = updated_state.analysis_output
-        assert artifact is not None
-        logger.info(
-            "Application completed analysis-agent demo for issue_id=%s artifact_path=%s",
-            artifact.summary.issue_id,
-            artifact.artifact_path,
-        )
-        return
-
-    if run_mode == "patch" and args.analysis_artifact:
-        logger.info(
-            "Application loading analysis artifact for patch run path=%s",
-            args.analysis_artifact,
-        )
-        state = apply_analysis_artifact_to_state(state, args.analysis_artifact)
-
-    if run_mode == "patch":
-        updated_state = run_patch_stage(state, config)
-        artifact = updated_state.patch_agent_output
-        assert artifact is not None
-        logger.info(
-            "Application completed patch-agent demo for issue_id=%s artifact_path=%s patch_draft_path=%s",
-            artifact.proposal.issue_id,
-            artifact.artifact_path,
-            artifact.patch_draft_path,
-        )
-        return
-
-    if run_mode == "validation":
-        updated_state = run_patch_stage(state, config)
-        updated_state = run_validation_stage(updated_state, config)
-        artifact = updated_state.validation_output
-        assert artifact is not None
-        logger.info(
-            "Application completed validation-agent demo for issue_id=%s verdict=%s report_path=%s",
-            artifact.report.issue_id,
-            artifact.report.verdict.status,
-            artifact.artifact_path,
-        )
-        return
-
-    logger.info(
-        "Application starting connected full flow: triage -> analysis -> patch -> validation"
+    updated_state = execute_run_mode(
+        run_mode=run_mode,
+        state=state,
+        config=config,
+        analysis_artifact_path=args.analysis_artifact,
+        emit_console=True,
     )
-    updated_state = run_triage_stage(state, config)
-    triage_artifact = updated_state.triage_output
-    assert triage_artifact is not None
+    result_payload = build_result_payload(run_mode, updated_state)
     logger.info(
-        "Application completed triage stage for full flow issue_id=%s artifact_path=%s",
-        triage_artifact.summary.issue_id,
-        triage_artifact.artifact_path,
-    )
-
-    updated_state = run_analysis_stage(updated_state, config)
-    analysis_artifact = updated_state.analysis_output
-    assert analysis_artifact is not None
-    logger.info(
-        "Application completed analysis stage for full flow issue_id=%s artifact_path=%s",
-        analysis_artifact.summary.issue_id,
-        analysis_artifact.artifact_path,
-    )
-
-    updated_state = run_patch_stage(updated_state, config)
-    patch_artifact = updated_state.patch_agent_output
-    assert patch_artifact is not None
-    logger.info(
-        "Application completed full flow for issue_id=%s triage_artifact=%s analysis_artifact=%s patch_artifact=%s",
-        patch_artifact.proposal.issue_id,
-        triage_artifact.artifact_path,
-        analysis_artifact.artifact_path,
-        patch_artifact.artifact_path,
-    )
-
-    updated_state = run_validation_stage(updated_state, config)
-    validation_artifact = updated_state.validation_output
-    assert validation_artifact is not None
-    logger.info(
-        "Application completed validation stage for issue_id=%s verdict=%s report_path=%s",
-        validation_artifact.report.issue_id,
-        validation_artifact.report.verdict.status,
-        validation_artifact.artifact_path,
+        "Application completed run mode=%s issue_id=%s",
+        run_mode,
+        result_payload["issue"]["issue_id"],
     )
 
 

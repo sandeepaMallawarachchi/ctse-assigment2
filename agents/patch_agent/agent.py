@@ -128,7 +128,7 @@ class PatchGenerationAgent:
                 state.issue.issue_id,
             )
             proposal = self.proposal_generator.generate(state)
-            self._validate_proposal_quality(proposal)
+            self._validate_proposal_quality(state, proposal)
             logger.info(
                 "PatchGenerationAgent accepted model-backed proposal for issue_id=%s",
                 state.issue.issue_id,
@@ -192,10 +192,15 @@ class PatchGenerationAgent:
             validation_focus=build_validation_focus(state.repository_findings),
         )
 
-    def _validate_proposal_quality(self, proposal: PatchProposal) -> None:
+    def _validate_proposal_quality(
+        self,
+        state: PatchWorkflowState,
+        proposal: PatchProposal,
+    ) -> None:
         """Reject incomplete model output before it reaches validation.
 
         Args:
+            state: Shared workflow state used to cross-check analysis findings.
             proposal: Structured proposal returned by the model-backed generator.
 
         Raises:
@@ -215,3 +220,12 @@ class PatchGenerationAgent:
                 "Model output has target files without matching change-plan entries: "
                 + ", ".join(missing_targets)
             )
+
+        allowed_files = {finding.file_path for finding in state.repository_findings}
+        if allowed_files:
+            invalid_targets = [path for path in proposal.target_files if path not in allowed_files]
+            if invalid_targets:
+                raise ValueError(
+                    "Model output referenced files outside the analysis findings: "
+                    + ", ".join(invalid_targets)
+                )

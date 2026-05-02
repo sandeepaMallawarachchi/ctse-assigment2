@@ -6,6 +6,7 @@ that can be inspected by downstream agents or during demonstrations.
 
 import json
 from pathlib import Path
+import re
 
 from agents.patch_agent.schema import PatchArtifact, PatchChangePlan, PatchProposal
 
@@ -60,6 +61,33 @@ def build_patch_draft_path(issue_id: str, output_dir: str = "outputs/patches") -
     return Path(output_dir) / f"{normalized_issue_id}_patch.diff"
 
 
+def build_fixed_file_output_path(
+    issue_id: str,
+    original_filename: str,
+    output_dir: str = "outputs/patches",
+) -> Path:
+    """Create a deterministic path for a generated fixed-file draft.
+
+    Args:
+        issue_id: Unique issue identifier used in the output filename.
+        original_filename: Name of the uploaded source file.
+        output_dir: Directory where generated fixed-file drafts are stored.
+
+    Returns:
+        Path pointing to the target fixed-file draft location.
+    """
+
+    normalized_issue_id = issue_id.strip()
+    original_name = Path(original_filename).name.strip()
+    if not normalized_issue_id:
+        raise ValueError("issue_id must be a non-empty string")
+    if not original_name:
+        raise ValueError("original_filename must be a non-empty string")
+
+    source_path = Path(original_name)
+    return Path(output_dir) / f"{normalized_issue_id}_{source_path.stem}.fixed{source_path.suffix}"
+
+
 def _build_file_diff(change: PatchChangePlan) -> str:
     """Create a lightweight unified-diff section for one planned file.
 
@@ -109,6 +137,107 @@ def build_patch_draft(proposal: PatchProposal) -> str:
     ]
     diff_sections = [_build_file_diff(change) for change in proposal.change_plan]
     return "\n".join(header + diff_sections).strip() + "\n"
+
+
+def _apply_python_loading_fix(original_content: str) -> str:
+    """Apply a small heuristic fix for stuck loading state in Python files."""
+
+    if original_content.count('ui_state["is_submitting"] = False') > 1:
+        return original_content
+
+    lines = original_content.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() == "return False":
+            previous_lines = lines[max(0, index - 2) : index]
+            if any('ui_state["is_submitting"] = False' in previous for previous in previous_lines):
+                continue
+            indent = re.match(r"^\s*", line).group(0)
+            lines.insert(index, f'{indent}ui_state["is_submitting"] = False')
+            return "\n".join(lines) + ("\n" if original_content.endswith("\n") else "")
+    return original_content
+
+
+def _apply_javascript_loading_fix(original_content: str) -> str:
+    """Apply a small heuristic fix for stuck loading state in JS-like files."""
+
+    lines = original_content.splitlines()
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith(("catch", "if (error", "if(error", "if (!response", "if(!response")):
+            block_lines = "\n".join(lines[index : min(len(lines), index + 8)])
+            if "setLoading(false)" in block_lines or "setSubmitting(false)" in block_lines:
+                continue
+            indent = re.match(r"^\s*", line).group(0) + "  "
+            fix_line = None
+            if "setLoading(true)" in original_content:
+                fix_line = f"{indent}setLoading(false);"
+            elif "setSubmitting(true)" in original_content:
+                fix_line = f"{indent}setSubmitting(false);"
+            elif "spinner" in original_content.lower():
+                fix_line = f"{indent}setSpinner(false);"
+
+            if fix_line is not None:
+                lines.insert(index + 1, fix_line)
+                return "\n".join(lines) + ("\n" if original_content.endswith("\n") else "")
+    return original_content
+
+
+def build_fixed_file_preview(
+    original_content: str,
+    original_filename: str,
+    proposal: PatchProposal,
+) -> str:
+    """Generate a simple fixed-file draft from the uploaded file content.
+
+    This is a heuristic preview for demos. It intentionally stays small and
+    favors preserving the original file while applying one targeted fix when
+    a common loading-state pattern is recognized.
+
+    Args:
+        original_content: Raw text of the uploaded source file.
+        original_filename: Uploaded source filename.
+        proposal: Patch proposal that motivated the draft.
+
+    Returns:
+        Updated file content suitable for preview or download.
+    """
+
+    suffix = Path(original_filename).suffix.lower()
+    if suffix == ".py":
+        updated = _apply_python_loading_fix(original_content)
+    elif suffix in {".js", ".jsx", ".ts", ".tsx"}:
+        updated = _apply_javascript_loading_fix(original_content)
+    else:
+        updated = original_content
+
+    if updated != original_content:
+        return updated
+
+    header_comment = (
+        f"# Proposed fix for {proposal.issue_id}: {proposal.summary}\n"
+        if suffix == ".py"
+        else f"// Proposed fix for {proposal.issue_id}: {proposal.summary}\n"
+    )
+    return header_comment + original_content
+
+
+def write_fixed_file_preview(
+    issue_id: str,
+    original_filename: str,
+    fixed_content: str,
+    output_dir: str = "outputs/patches",
+) -> str:
+    """Write a generated fixed-file draft to disk and return its path."""
+
+    output_path = build_fixed_file_output_path(
+        issue_id=issue_id,
+        original_filename=original_filename,
+        output_dir=output_dir,
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as file_handle:
+        file_handle.write(fixed_content)
+    return str(output_path)
 
 
 def write_patch_artifact(

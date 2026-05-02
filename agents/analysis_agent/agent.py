@@ -106,6 +106,7 @@ class CodebaseAnalysisAgent:
         search_results = search_repository(
             repo_root=state.repository_root,
             search_terms=search_terms,
+            target_file=state.target_code_file,
         )
         summary = self._generate_summary(state, search_terms, search_results)
         state.repository_findings = [
@@ -148,7 +149,7 @@ class CodebaseAnalysisAgent:
                 state.issue.issue_id,
             )
             summary = self.summary_generator.generate(state, search_terms, findings)
-            self._validate_summary_quality(summary)
+            self._validate_summary_quality(state, summary, findings)
             logger.info(
                 "CodebaseAnalysisAgent accepted model-backed summary for issue_id=%s",
                 state.issue.issue_id,
@@ -197,7 +198,12 @@ class CodebaseAnalysisAgent:
             summary=summary_text,
         )
 
-    def _validate_summary_quality(self, summary: AnalysisSummary) -> None:
+    def _validate_summary_quality(
+        self,
+        state: PatchWorkflowState,
+        summary: AnalysisSummary,
+        findings: list[CodeSearchResult],
+    ) -> None:
         """Reject incomplete model output before it reaches downstream agents."""
 
         if not summary.findings:
@@ -205,6 +211,23 @@ class CodebaseAnalysisAgent:
 
         if not summary.summary.strip():
             raise ValueError("Model output must include a non-empty analysis summary.")
+
+        allowed_files = {result.finding.file_path for result in findings}
+        if allowed_files:
+            invalid_files = [
+                finding.file_path for finding in summary.findings
+                if finding.file_path not in allowed_files
+            ]
+            if invalid_files:
+                raise ValueError(
+                    "Model output referenced files not produced by repository search: "
+                    + ", ".join(invalid_files)
+                )
+
+        if state.target_code_file and len(summary.findings) > 1:
+            raise ValueError(
+                "Single-file analysis must not return findings for multiple files."
+            )
 
     def _write_analysis_artifact(self, summary: AnalysisSummary) -> AnalysisArtifact:
         """Persist the analysis summary to disk for inspection."""

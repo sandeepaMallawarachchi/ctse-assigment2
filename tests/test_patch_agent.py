@@ -11,7 +11,7 @@ from agents.patch_agent.prompt import build_patch_agent_user_prompt
 from agents.patch_agent.schema import PatchChangePlan, PatchProposal
 from agents.patch_agent.utils import collect_candidate_files
 from orchestrator.state import IssueContext, PatchWorkflowState, RepositoryFinding
-from tools.patch_tools.patch_writer import build_patch_draft
+from tools.patch_tools.patch_writer import build_fixed_file_preview, build_patch_draft
 
 
 class FakeProposalGenerator:
@@ -143,6 +143,47 @@ def test_build_patch_draft_renders_unified_diff_sections() -> None:
     assert draft.startswith("# Issue: ISSUE-200")
     assert "diff --git a/app/auth.py b/app/auth.py" in draft
     assert "+# Patch intent: Reset loading state in the error branch" in draft
+
+
+def test_build_fixed_file_preview_applies_python_loading_fix() -> None:
+    """The fixed-file preview should clear stuck submitting state in Python demos."""
+
+    original_content = """def handle_login(api_client, username, password, ui_state):
+    ui_state["is_submitting"] = True
+    ui_state["error"] = ""
+    response = api_client.login(username=username, password=password)
+    if response.get("success"):
+        ui_state["user"] = response.get("user")
+        ui_state["is_submitting"] = False
+        return True
+    ui_state["error"] = response.get("message", "Login failed")
+    return False
+"""
+
+    proposal = PatchProposal(
+        issue_id="ISSUE-201",
+        summary="Reset loading state after failed login.",
+        target_files=["login_handler.py"],
+        change_plan=[
+            PatchChangePlan(
+                file_path="login_handler.py",
+                change_summary="Clear loading state in the failure path.",
+                evidence="The failure path returns without resetting submitting state.",
+            )
+        ],
+        rationale="The failure branch should clear transient UI state.",
+        risk_level="low",
+        risk_notes=["Only one file is targeted."],
+        validation_focus=["Confirm loading state resets on failed login."],
+    )
+
+    fixed_content = build_fixed_file_preview(
+        original_content=original_content,
+        original_filename="login_handler.py",
+        proposal=proposal,
+    )
+
+    assert 'ui_state["is_submitting"] = False\n    return False' in fixed_content
 
 
 def test_patch_generation_agent_accepts_model_backed_structured_output(
