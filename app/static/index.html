@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Automated Software Issue Resolver</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">Local MAS Demo</p>
+        <h1>Automated Software Issue Resolver</h1>
+        <p class="lede">
+          Upload one code file, choose an agent or the full flow, and review
+          structured outputs from triage, analysis, patch generation, and validation.
+        </p>
+      </section>
+
+      <section class="panel form-panel">
+        <form id="run-form" class="run-form">
+          <div class="mode-strip">
+            <div>
+              <strong>Input Mode</strong>
+              <p>Describe the issue manually, upload one code file, and run a selected agent flow.</p>
+            </div>
+            <div id="mode-hint" class="mode-hint">
+              Full flow runs `triage -> analysis -> patch -> validation`.
+            </div>
+          </div>
+
+          <div class="grid">
+            <label>
+              <span>Issue ID</span>
+              <input type="text" name="issue_id" placeholder="Auto-generated if left blank" />
+            </label>
+
+            <label>
+              <span>Run Mode</span>
+              <select name="run_mode" required>
+                <option value="triage">Triage Agent</option>
+                <option value="analysis">Codebase Analysis Agent</option>
+                <option value="patch">Patch Generation Agent</option>
+                <option value="validation">Validation &amp; Report Agent</option>
+                <option value="full" selected>Full Flow</option>
+              </select>
+            </label>
+          </div>
+
+          <label>
+            <span>Issue Title</span>
+            <input
+              id="issue-title-input"
+              type="text"
+              name="issue_title"
+              placeholder="Enter a short issue title"
+              required
+            />
+          </label>
+
+          <label>
+            <span>Issue Description</span>
+            <textarea
+              id="issue-description-input"
+              name="issue_description"
+              rows="4"
+              placeholder="Describe the bug, issue, or feature request"
+              required
+            ></textarea>
+          </label>
+
+          <label>
+            <span>Expected Behavior</span>
+            <textarea id="expected-behavior-input" name="expected_behavior" rows="3" placeholder="Describe what should happen instead"></textarea>
+          </label>
+
+          <label>
+            <span>Optional Project Root</span>
+            <input type="text" name="repo_root" placeholder="/path/to/project/root" />
+          </label>
+
+          <label class="upload-field">
+            <span>Upload Code File</span>
+            <input type="file" id="code-file-input" name="code_file" accept=".py,.js,.ts,.tsx,.jsx,.json,.md,.java,.cs,.cpp,.c" />
+            <small id="code-file-note" class="field-note">
+              Best for analysis, patch, validation, and full flow runs.
+            </small>
+          </label>
+
+          <div class="actions">
+            <button type="submit" id="run-button">Run Agents</button>
+            <p id="status" class="status">Waiting for input.</p>
+          </div>
+        </form>
+      </section>
+
+      <section id="meta-panel" class="panel hidden">
+        <h2>Run Summary</h2>
+        <div id="meta-content" class="meta-grid"></div>
+      </section>
+
+      <section id="results" class="results"></section>
+
+      <section id="file-review-panel" class="panel hidden">
+        <header class="result-header">
+          <h2 class="result-title">File Review</h2>
+          <span class="result-badge">Draft Output</span>
+        </header>
+        <div id="file-review-grid" class="file-review-grid"></div>
+        <div id="file-review-actions" class="file-review-actions"></div>
+      </section>
+    </main>
+
+    <template id="result-card-template">
+      <article class="panel result-card">
+        <header class="result-header">
+          <h2 class="result-title"></h2>
+          <span class="result-badge"></span>
+        </header>
+        <div class="result-body"></div>
+      </article>
+    </template>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

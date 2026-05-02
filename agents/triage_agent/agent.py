@@ -78,6 +78,8 @@ class TriageAgent:
 
         logger.info("TriageAgent started for issue_id=%s", state.issue.issue_id)
         summary = self._generate_summary(state)
+        if not summary.expected_behavior and state.issue.expected_behavior:
+            summary.expected_behavior = state.issue.expected_behavior.strip()
         state.issue.title = summary.normalized_title
         state.issue.description = summary.normalized_description
         state.issue.expected_behavior = summary.expected_behavior

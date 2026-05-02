@@ -6,9 +6,34 @@ import json
 from pathlib import Path
 
 from agents.analysis_agent.agent import CodebaseAnalysisAgent
+from agents.analysis_agent.schema import AnalysisFinding, AnalysisSummary
 from agents.triage_agent.schema import TriageArtifact, TriageSummary
 from orchestrator.state import IssueContext, PatchWorkflowState
 from tools.analysis_tools.code_search import derive_search_terms, search_repository
+
+
+class HallucinatedAnalysisGenerator:
+    """Fake generator that returns files not present in repository search output."""
+
+    def generate(
+        self,
+        state: PatchWorkflowState,
+        search_terms: list[str],
+        findings: list[object],
+    ) -> AnalysisSummary:
+        return AnalysisSummary(
+            issue_id=state.issue.issue_id,
+            repo_path=state.repository_root,
+            search_terms=search_terms,
+            findings=[
+                AnalysisFinding(
+                    file_path="src/components/LoginScreen.js",
+                    snippet="const [loading, setLoading] = useState(false);",
+                    reason="Hallucinated file path from weak model output.",
+                )
+            ],
+            summary="Model guessed a likely UI file.",
+        )
 
 
 def test_derive_search_terms_extracts_keywords() -> None:
@@ -45,6 +70,20 @@ def test_search_repository_returns_mock_repo_findings() -> None:
 
     assert "if login_failed:" in auth_result.finding.snippet
     assert "submit_button = {" in ui_result.finding.snippet
+
+
+def test_search_repository_can_focus_on_single_file() -> None:
+    """The search tool should be able to inspect one local file directly."""
+
+    results = search_repository(
+        repo_root="data/repo_mock",
+        search_terms=["spinner", "failed"],
+        target_file="data/repo_mock/src/auth/login_handler.py",
+    )
+
+    assert len(results) == 1
+    assert results[0].finding.file_path.endswith("login_handler.py")
+    assert "if login_failed:" in results[0].finding.snippet
 
 
 def test_codebase_analysis_agent_writes_analysis_artifact(tmp_path: Path) -> None:
@@ -110,3 +149,32 @@ def test_codebase_analysis_agent_uses_triage_keywords_when_available(
         "spinner",
         "failed",
     ]
+
+
+def test_codebase_analysis_agent_falls_back_when_model_invents_files(
+    tmp_path: Path,
+) -> None:
+    """Model output should be rejected if it references files outside tool findings."""
+
+    state = PatchWorkflowState(
+        issue=IssueContext(
+            issue_id="ISSUE-102",
+            title="Fix login spinner not stopping",
+            description="Spinner stays active after a failed login.",
+            expected_behavior="Spinner should stop after failed authentication.",
+        ),
+        repository_root="data/repo_mock",
+        target_code_file="data/repo_mock/src/auth/login_handler.py",
+    )
+
+    agent = CodebaseAnalysisAgent(
+        output_dir=str(tmp_path),
+        summary_generator=HallucinatedAnalysisGenerator(),
+    )
+    updated_state = agent.run(state)
+
+    assert updated_state.analysis_output is not None
+    assert len(updated_state.analysis_output.summary.findings) == 1
+    assert updated_state.analysis_output.summary.findings[0].file_path.endswith(
+        "login_handler.py"
+    )

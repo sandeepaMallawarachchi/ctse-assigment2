@@ -143,6 +143,7 @@ def search_repository(
     repo_root: str,
     search_terms: list[str],
     max_results: int = 3,
+    target_file: Optional[str] = None,
 ) -> list[CodeSearchResult]:
     """Search a local repository for issue-relevant files and snippets.
 
@@ -150,6 +151,7 @@ def search_repository(
         repo_root: Local repository path to inspect.
         search_terms: Keywords derived from the issue context.
         max_results: Maximum number of results to return.
+        target_file: Optional local file path to inspect instead of the full repo.
 
     Returns:
         Ordered list of relevant search results.
@@ -165,8 +167,17 @@ def search_repository(
     if not repo_path.is_dir():
         raise ValueError(f"Repository path must be a directory: {repo_root}")
 
+    focused_file: Optional[Path] = None
+    if target_file:
+        focused_file = Path(target_file)
+        if not focused_file.exists():
+            raise FileNotFoundError(f"Target file does not exist: {target_file}")
+        if not focused_file.is_file():
+            raise ValueError(f"Target file must be a file: {target_file}")
+
     results: list[CodeSearchResult] = []
-    for file_path in _iter_candidate_files(repo_path):
+    candidate_files = [focused_file] if focused_file is not None else _iter_candidate_files(repo_path)
+    for file_path in candidate_files:
         try:
             content = file_path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
@@ -177,7 +188,10 @@ def search_repository(
             continue
 
         snippet, line_start, line_end = _extract_best_snippet(content, search_terms)
-        relative_path = file_path.relative_to(repo_path).as_posix()
+        if focused_file is not None:
+            relative_path = file_path.name if not file_path.is_relative_to(repo_path) else file_path.relative_to(repo_path).as_posix()
+        else:
+            relative_path = file_path.relative_to(repo_path).as_posix()
         reason = (
             f"Matched issue keywords {', '.join(search_terms[:3])} in {relative_path}."
             if search_terms

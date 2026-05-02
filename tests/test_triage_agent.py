@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from agents.triage_agent.agent import TriageAgent
+from agents.triage_agent.schema import TriageSummary
 from orchestrator.state import IssueContext, PatchWorkflowState
 from tools.triage_tools.issue_parser import (
     classify_issue_type,
@@ -74,3 +75,45 @@ def test_triage_agent_writes_artifact(tmp_path: Path) -> None:
     payload = json.loads(artifact_path.read_text(encoding="utf-8"))
     assert payload["issue_id"] == "ISSUE-401"
     assert payload["issue_type"] == "bug"
+
+
+class _MissingExpectedBehaviorGenerator:
+    """Test double that omits expected behavior from model output."""
+
+    def generate(self, state: PatchWorkflowState) -> TriageSummary:
+        return TriageSummary(
+            issue_id=state.issue.issue_id,
+            issue_type="bug",
+            priority="medium",
+            normalized_title=state.issue.title,
+            normalized_description=state.issue.description,
+            expected_behavior=None,
+            search_keywords=["login", "spinner"],
+            summary="Structured triage summary for downstream use.",
+        )
+
+
+def test_triage_agent_preserves_expected_behavior_when_model_omits_it(tmp_path: Path) -> None:
+    """Manual expected behavior should survive a partial model-backed triage result."""
+
+    state = PatchWorkflowState(
+        issue=IssueContext(
+            issue_id="ISSUE-402",
+            title="Fix login button spinner not stopping",
+            description="The button remains stuck after a failed login attempt.",
+            expected_behavior="The spinner should stop after failure.",
+        )
+    )
+
+    agent = TriageAgent(
+        output_dir=str(tmp_path),
+        summary_generator=_MissingExpectedBehaviorGenerator(),
+    )
+    updated_state = agent.run(state)
+
+    assert updated_state.issue.expected_behavior == "The spinner should stop after failure."
+    assert updated_state.triage_output is not None
+    assert (
+        updated_state.triage_output.summary.expected_behavior
+        == "The spinner should stop after failure."
+    )
