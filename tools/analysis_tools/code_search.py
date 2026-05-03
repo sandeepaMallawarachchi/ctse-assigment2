@@ -21,7 +21,8 @@ class CodeSearchResult:
         self.finding = finding
         self.score = score
 
-
+"""Derive simple search terms from issue context for repository inspection.
+This function extracts keywords from the issue title, description, and optional expected behavior."""
 def derive_search_terms(
     title: str,
     description: str,
