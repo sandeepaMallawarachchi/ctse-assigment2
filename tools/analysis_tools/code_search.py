@@ -9,6 +9,11 @@ from typing import Optional
 from orchestrator.state import RepositoryFinding
 
 
+"""This module provides utilities for searching a local code repository based on issue context. 
+    It includes functions to derive search terms from issue details, identify relevant files, and extract code snippets that may be related to the issue.
+    The main function, `search_repository`, returns a list of `CodeSearchResult` objects containing repository findings and their relevance scores. 
+    This is designed to assist the Codebase Analysis Agent in efficiently locating potential sources of issues within a codebase.
+"""
 class CodeSearchResult:
     """Container for a repository finding plus its internal relevance score."""
 
