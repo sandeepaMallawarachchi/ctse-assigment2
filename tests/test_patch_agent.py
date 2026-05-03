@@ -186,6 +186,58 @@ def test_build_fixed_file_preview_applies_python_loading_fix() -> None:
     assert 'ui_state["is_submitting"] = False\n    return False' in fixed_content
 
 
+def test_build_fixed_file_preview_applies_javascript_saving_fix() -> None:
+    """The fixed-file preview should reset saving state in JS failure branches."""
+
+    original_content = """async function updateProfile(api, payload, setSaving, setMessage) {
+  setSaving(true);
+  setMessage("");
+
+  try {
+    const response = await api.updateProfile(payload);
+
+    if (!response.ok) {
+      setMessage("Profile update failed");
+      return false;
+    }
+
+    setMessage("Profile updated successfully");
+    setSaving(false);
+    return true;
+  } catch (error) {
+    setMessage("Network error");
+    return false;
+  }
+}
+"""
+
+    proposal = PatchProposal(
+        issue_id="ISSUE-202",
+        summary="Reset saving state after failed profile update.",
+        target_files=["profile_update.js"],
+        change_plan=[
+            PatchChangePlan(
+                file_path="profile_update.js",
+                change_summary="Reset saving state in failed response and catch branches.",
+                evidence="The failure paths return without clearing the saving flag.",
+            )
+        ],
+        rationale="The UI should leave the saving state when the request fails.",
+        risk_level="low",
+        risk_notes=["Only one file is targeted."],
+        validation_focus=["Confirm the save button becomes active after failure."],
+    )
+
+    fixed_content = build_fixed_file_preview(
+        original_content=original_content,
+        original_filename="profile_update.js",
+        proposal=proposal,
+    )
+
+    assert 'setSaving(false);\n      return false;' in fixed_content
+    assert 'setSaving(false);\n    return false;' in fixed_content
+
+
 def test_patch_generation_agent_accepts_model_backed_structured_output(
     tmp_path: Path,
 ) -> None:

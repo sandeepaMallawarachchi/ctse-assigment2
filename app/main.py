@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 import sys
 from typing import Any, Optional
+import uuid
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -32,6 +33,7 @@ from agents.validation_agent.agent import (
     ValidationAgent,
 )
 from app.config import AppConfig
+from orchestrator.graph import run_workflow
 from orchestrator.state import IssueContext, PatchWorkflowState, RepositoryFinding
 
 
@@ -135,24 +137,9 @@ def build_state_from_issue_payload(
 
     return PatchWorkflowState(
         issue=IssueContext(**issue_payload),
+        run_id=f"RUN-{uuid.uuid4().hex[:8].upper()}",
         repository_root=repo_root,
         target_code_file=code_file,
-        repository_findings=[
-            RepositoryFinding(
-                file_path="src/auth/login_handler.py",
-                snippet="if login_failed: spinner = True",
-                reason="Failure handling appears to leave the loading spinner active.",
-                line_start=18,
-                line_end=26,
-            ),
-            RepositoryFinding(
-                file_path="src/ui/login_form.py",
-                snippet="submit_button.loading = state.is_submitting",
-                reason="The login form controls how the button loading state is rendered.",
-                line_start=41,
-                line_end=55,
-            ),
-        ],
     )
 
 
@@ -270,6 +257,8 @@ def build_result_payload(
 
     return {
         "run_mode": run_mode,
+        "run_id": state.run_id,
+        "execution_trace": state.execution_trace,
         "issue": {
             "issue_id": state.issue.issue_id,
             "title": state.issue.title,
@@ -297,10 +286,32 @@ def execute_run_mode(
     logger = logging.getLogger(__name__)
 
     if run_mode == "triage":
-        return run_triage_stage(state, config) if emit_console else build_triage_agent(config).run(state)
+        updated_state = run_workflow(
+            initial_state=state,
+            config=config,
+            build_triage_agent=build_triage_agent,
+            build_analysis_agent=build_analysis_agent,
+            build_patch_agent=build_patch_agent,
+            build_validation_agent=build_validation_agent,
+            run_mode="triage",
+        )
+        if emit_console:
+            _print_triage_summary(updated_state)
+        return updated_state
 
     if run_mode == "analysis":
-        return run_analysis_stage(state, config) if emit_console else build_analysis_agent(config).run(state)
+        updated_state = run_workflow(
+            initial_state=state,
+            config=config,
+            build_triage_agent=build_triage_agent,
+            build_analysis_agent=build_analysis_agent,
+            build_patch_agent=build_patch_agent,
+            build_validation_agent=build_validation_agent,
+            run_mode="analysis",
+        )
+        if emit_console:
+            _print_analysis_summary(updated_state)
+        return updated_state
 
     if run_mode in {"patch", "validation"} and analysis_artifact_path:
         logger.info(
@@ -310,32 +321,37 @@ def execute_run_mode(
         )
         state = apply_analysis_artifact_to_state(state, analysis_artifact_path)
 
-    if run_mode == "patch":
-        if state.target_code_file and not analysis_artifact_path:
-            logger.info(
-                "Application running analysis before patch for target_code_file=%s",
-                state.target_code_file,
-            )
-            state = run_analysis_stage(state, config) if emit_console else build_analysis_agent(config).run(state)
-        return run_patch_stage(state, config) if emit_console else build_patch_agent(config).run(state)
+    if run_mode in {"patch", "validation", "full"}:
+        logger.info(
+            "Application invoking LangGraph workflow run_mode=%s run_id=%s",
+            run_mode,
+            state.run_id,
+        )
+        updated_state = run_workflow(
+            initial_state=state,
+            config=config,
+            build_triage_agent=build_triage_agent,
+            build_analysis_agent=build_analysis_agent,
+            build_patch_agent=build_patch_agent,
+            build_validation_agent=build_validation_agent,
+            run_mode=run_mode,
+        )
+        if emit_console:
+            if run_mode == "patch":
+                _print_analysis_summary(updated_state)
+                _print_patch_summary(updated_state)
+            elif run_mode == "validation":
+                _print_analysis_summary(updated_state)
+                _print_patch_summary(updated_state)
+                _print_validation_summary(updated_state)
+            else:
+                _print_triage_summary(updated_state)
+                _print_analysis_summary(updated_state)
+                _print_patch_summary(updated_state)
+                _print_validation_summary(updated_state)
+        return updated_state
 
-    if run_mode == "validation":
-        if state.target_code_file and not analysis_artifact_path:
-            logger.info(
-                "Application running analysis before validation for target_code_file=%s",
-                state.target_code_file,
-            )
-            state = run_analysis_stage(state, config) if emit_console else build_analysis_agent(config).run(state)
-        state = run_patch_stage(state, config) if emit_console else build_patch_agent(config).run(state)
-        return run_validation_stage(state, config) if emit_console else build_validation_agent(config).run(state)
-
-    logger.info(
-        "Application starting connected full flow: triage -> analysis -> patch -> validation"
-    )
-    state = run_triage_stage(state, config) if emit_console else build_triage_agent(config).run(state)
-    state = run_analysis_stage(state, config) if emit_console else build_analysis_agent(config).run(state)
-    state = run_patch_stage(state, config) if emit_console else build_patch_agent(config).run(state)
-    return run_validation_stage(state, config) if emit_console else build_validation_agent(config).run(state)
+    return state
 
 
 def _load_analysis_artifact(artifact_path: str) -> AnalysisArtifact:
@@ -546,6 +562,69 @@ def run_validation_stage(
     print(f"Recommendation: {report.recommendation}")
     print(f"Report path: {artifact.artifact_path}")
     return updated_state
+
+
+def _print_triage_summary(state: PatchWorkflowState) -> None:
+    """Print triage output without re-running the agent."""
+
+    artifact = state.triage_output
+    assert artifact is not None
+    print("Triage Agent demo completed")
+    print(f"Issue ID: {artifact.summary.issue_id}")
+    print(f"Issue type: {artifact.summary.issue_type}")
+    print(f"Priority: {artifact.summary.priority}")
+    print(f"Keywords: {', '.join(artifact.summary.search_keywords)}")
+    print(f"Artifact path: {artifact.artifact_path}")
+
+
+def _print_analysis_summary(state: PatchWorkflowState) -> None:
+    """Print analysis output without re-running the agent."""
+
+    artifact = state.analysis_output
+    assert artifact is not None
+    print("Codebase Analysis Agent demo completed")
+    print(f"Issue ID: {artifact.summary.issue_id}")
+    print(f"Repository root: {artifact.summary.repo_path}")
+    if state.target_code_file:
+        print(f"Target code file: {state.target_code_file}")
+    print(f"Findings count: {len(artifact.summary.findings)}")
+    print(f"Artifact path: {artifact.artifact_path}")
+
+
+def _print_patch_summary(state: PatchWorkflowState) -> None:
+    """Print patch output without re-running the agent."""
+
+    artifact = state.patch_agent_output
+    assert artifact is not None
+    print("Patch Generation Agent demo completed")
+    print(f"Issue ID: {artifact.proposal.issue_id}")
+    if state.target_code_file:
+        print(f"Target code file: {state.target_code_file}")
+    print(f"Target files: {', '.join(artifact.proposal.target_files)}")
+    print(f"Risk level: {artifact.proposal.risk_level}")
+    print(f"Artifact path: {artifact.artifact_path}")
+    print(f"Patch draft path: {artifact.patch_draft_path}")
+
+
+def _print_validation_summary(state: PatchWorkflowState) -> None:
+    """Print validation output without re-running the agent."""
+
+    artifact = state.validation_output
+    assert artifact is not None
+    report = artifact.report
+    verdict = report.verdict
+    print("Validation & Report Agent completed")
+    print(f"Issue ID: {report.issue_id}")
+    if state.target_code_file:
+        print(f"Target code file: {state.target_code_file}")
+    print(f"Verdict: {verdict.status} (confidence: {verdict.confidence})")
+    print(
+        f"Checks: {verdict.checks_passed} passed, "
+        f"{verdict.checks_failed} failed, {verdict.checks_warned} warned"
+    )
+    print(f"Assessment: {report.llm_assessment}")
+    print(f"Recommendation: {report.recommendation}")
+    print(f"Report path: {artifact.artifact_path}")
 
 
 def main() -> None:

@@ -160,25 +160,40 @@ def _apply_python_loading_fix(original_content: str) -> str:
 def _apply_javascript_loading_fix(original_content: str) -> str:
     """Apply a small heuristic fix for stuck loading state in JS-like files."""
 
-    lines = original_content.splitlines()
-    for index, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith(("catch", "if (error", "if(error", "if (!response", "if(!response")):
-            block_lines = "\n".join(lines[index : min(len(lines), index + 8)])
-            if "setLoading(false)" in block_lines or "setSubmitting(false)" in block_lines:
-                continue
-            indent = re.match(r"^\s*", line).group(0) + "  "
-            fix_line = None
-            if "setLoading(true)" in original_content:
-                fix_line = f"{indent}setLoading(false);"
-            elif "setSubmitting(true)" in original_content:
-                fix_line = f"{indent}setSubmitting(false);"
-            elif "spinner" in original_content.lower():
-                fix_line = f"{indent}setSpinner(false);"
+    setter_candidates = re.findall(
+        r"\b(set[A-Z][A-Za-z0-9_]*)\(\s*true\s*\)",
+        original_content,
+    )
+    reset_call = f"{setter_candidates[0]}(false);" if setter_candidates else None
 
-            if fix_line is not None:
-                lines.insert(index + 1, fix_line)
-                return "\n".join(lines) + ("\n" if original_content.endswith("\n") else "")
+    lines = original_content.splitlines()
+    if reset_call is None:
+        if "setLoading(true)" in original_content:
+            reset_call = "setLoading(false);"
+        elif "setSubmitting(true)" in original_content:
+            reset_call = "setSubmitting(false);"
+        elif "spinner" in original_content.lower():
+            reset_call = "setSpinner(false);"
+
+    if reset_call is None:
+        return original_content
+
+    inserted = False
+    for index, line in enumerate(list(lines)):
+        if line.strip() != "return false;":
+            continue
+
+        current_index = lines.index(line, index if not inserted else 0)
+        previous_lines = lines[max(0, current_index - 2) : current_index]
+        if any(reset_call in previous for previous in previous_lines):
+            continue
+
+        indent = re.match(r"^\s*", lines[current_index]).group(0)
+        lines.insert(current_index, f"{indent}{reset_call}")
+        inserted = True
+
+    if inserted:
+        return "\n".join(lines) + ("\n" if original_content.endswith("\n") else "")
     return original_content
 
 

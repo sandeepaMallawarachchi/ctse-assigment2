@@ -49,6 +49,10 @@ class PatchWorkflowState(BaseModel):
     """Shared state container used by the orchestrator and agents."""
 
     issue: IssueContext
+    run_id: Optional[str] = Field(
+        default=None,
+        description="Optional workflow run identifier used for tracing and logs.",
+    )
     repository_root: str = Field(
         default="data/repo_mock",
         description="Local repository path that analysis tools should inspect.",
@@ -58,6 +62,10 @@ class PatchWorkflowState(BaseModel):
         description="Optional specific local file path the agents should focus on.",
     )
     repository_findings: list[RepositoryFinding] = Field(default_factory=list)
+    execution_trace: list[str] = Field(
+        default_factory=list,
+        description="Ordered record of workflow stages visited during orchestration.",
+    )
     triage_output: Optional[TriageArtifact] = Field(
         default=None,
         description="Structured triage result produced by the Triage Agent.",
