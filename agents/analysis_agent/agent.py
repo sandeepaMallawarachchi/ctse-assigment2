@@ -30,6 +30,9 @@ from tools.analysis_tools.code_search import (
 
 logger = logging.getLogger(__name__)
 
+"""This module defines the CodebaseAnalysisAgent, which inspects a local repository to identify relevant code locations based on issue details. 
+It can optionally use a model-backed AnalysisSummaryGenerator to create structured summaries of the findings, but will gracefully fall back to a deterministic summary if no generator is provided or if the generator fails.
+"""
 
 class AnalysisSummaryGenerator(Protocol):
     """Protocol for optional model-backed analysis summarization."""
