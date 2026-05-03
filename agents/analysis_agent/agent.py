@@ -45,6 +45,9 @@ class AnalysisSummaryGenerator(Protocol):
     ) -> AnalysisSummary:
         """Create a structured analysis summary from search results."""
 
+"""This is a concrete implementation of the AnalysisSummaryGenerator protocol that uses a local Ollama model via LangChain to generate analysis summaries.
+It expects the model to return output that can be coerced into the AnalysisSummary schema, and includes validation to ensure the model output meets quality standards before it is used downstream.
+"""
 
 class OllamaAnalysisSummaryGenerator:
     """Generate analysis summaries with Ollama via LangChain."""
