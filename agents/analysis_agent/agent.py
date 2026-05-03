@@ -11,9 +11,9 @@ import logging
 from pathlib import Path
 from typing import Optional, Protocol
 
-"""Note: This agent is designed to be flexible with or without a model-backed summary generator. 
-If no generator is provided, it will produce a deterministic summary based solely on the repository search results. 
-This allows for robust operation even in environments without access to language models, while still enabling enhanced summaries when a generator is available.
+"""This agent is designed to be flexible with or without a model-backed summary generator. 
+   If no generator is provided, it will produce a deterministic summary based solely on the repository search results. 
+   This allows for robust operation even in environments without access to language models, while still enabling enhanced summaries when a generator is available.
 """
 
 from agents.analysis_agent.prompt import (
@@ -31,7 +31,7 @@ from tools.analysis_tools.code_search import (
 logger = logging.getLogger(__name__)
 
 """This module defines the CodebaseAnalysisAgent, which inspects a local repository to identify relevant code locations based on issue details. 
-It can optionally use a model-backed AnalysisSummaryGenerator to create structured summaries of the findings, but will gracefully fall back to a deterministic summary if no generator is provided or if the generator fails.
+   It can optionally use a model-backed AnalysisSummaryGenerator to create structured summaries of the findings, but will gracefully fall back to a deterministic summary if no generator is provided or if the generator fails.
 """
 
 class AnalysisSummaryGenerator(Protocol):
@@ -46,7 +46,7 @@ class AnalysisSummaryGenerator(Protocol):
         """Create a structured analysis summary from search results."""
 
 """This is a concrete implementation of the AnalysisSummaryGenerator protocol that uses a local Ollama model via LangChain to generate analysis summaries.
-It expects the model to return output that can be coerced into the AnalysisSummary schema, and includes validation to ensure the model output meets quality standards before it is used downstream.
+   It expects the model to return output that can be coerced into the AnalysisSummary schema, and includes validation to ensure the model output meets quality standards before it is used downstream.
 """
 
 class OllamaAnalysisSummaryGenerator:
@@ -84,6 +84,12 @@ class OllamaAnalysisSummaryGenerator:
             ]
         )
 
+"""The CodebaseAnalysisAgent is responsible for inspecting a local repository to identify relevant code locations based on issue details.
+   It can optionally use a model-backed AnalysisSummaryGenerator to create structured summaries of the findings,
+   but will gracefully fall back to a deterministic summary if no generator is provided or if the generator fails. 
+   The agent performs a repository search using derived search terms from the issue details, generates an analysis summary, 
+   validates the summary quality, and persists the findings and summary to disk for downstream use.
+"""
 
 class CodebaseAnalysisAgent:
     """Specialized agent that finds relevant files and snippets in a repo."""
