@@ -11,6 +11,11 @@ import logging
 from pathlib import Path
 from typing import Optional, Protocol
 
+"""Note: This agent is designed to be flexible with or without a model-backed summary generator. 
+If no generator is provided, it will produce a deterministic summary based solely on the repository search results. 
+This allows for robust operation even in environments without access to language models, while still enabling enhanced summaries when a generator is available.
+"""
+
 from agents.analysis_agent.prompt import (
     ANALYSIS_AGENT_SYSTEM_PROMPT,
     build_analysis_user_prompt,
