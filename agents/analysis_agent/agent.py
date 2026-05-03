@@ -23,6 +23,8 @@ from agents.analysis_agent.prompt import (
 
 """Data schemas for the analysis agent, including the structure of findings and summaries that are produced from repository analysis."""
 from agents.analysis_agent.schema import AnalysisArtifact, AnalysisFinding, AnalysisSummary
+
+"""Core state definitions for the patch workflow, including the structure of repository findings that are populated by this agent."""
 from orchestrator.state import PatchWorkflowState, RepositoryFinding
 from tools.analysis_tools.code_search import (
     CodeSearchResult,
