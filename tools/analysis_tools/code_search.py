@@ -66,7 +66,9 @@ def derive_search_terms(
         terms.append(word)
     return terms[:8]
 
-
+"""Identify candidate files in the repository to inspect based on their type and location.
+This function recursively searches the repository for files with certain extensions while excluding common directories like .git, node_modules, and virtual environments.
+"""
 def _iter_candidate_files(repo_root: Path) -> list[Path]:
     """Return text-like repository files to inspect."""
 
